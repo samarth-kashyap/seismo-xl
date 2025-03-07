@@ -1,3 +1,8 @@
 .config
 .ipynb_checkpoints
 __pycache__
+mcmc*
+modes*
+*.dat
+*.png
+data

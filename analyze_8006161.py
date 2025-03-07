@@ -3,6 +3,8 @@ import h5py
 import argparse
 import matplotlib.pyplot as plt
 from tqdm import tqdm
+from src.utils import read_modeparams
+from src.utils import read_a2z
 from scipy.optimize import curve_fit
 
 # Local imports
@@ -11,18 +13,12 @@ from src.solarspec import solarPS
 
 # Defining some global variables
 GVARS = globalVars()
-ELLS, ENNS, NUS, FWHMS, SIG_FWHMS = GVARS.load_data()
-
+mode_data = read_a2z('modes_param.a2z')
+# mode data is written as enn, ell, freq, A, gamma
 
 #--------------------- ARGUMENT PARSER ---------------------------------
 parser = argparse.ArgumentParser(description='Process some integers.')
-parser.add_argument('--source', type=str, default='valeriy', help='VIRGO data source')
-parser.add_argument('--channel', type=str, default='blue', help='VIRGO channel (default=blue)')
 parser.add_argument('--skipmax', type=int, default=40, help='Maximum skip number (default=40)')
-parser.add_argument('--Ncarr', type=int, default=3, help='Number of Carrington rotations')
-parser.add_argument('--lmax', type=np.int32, default=3, help='Lmax (default=3)')
-parser.add_argument('--inclang', type=np.int32, default=90, help='Inclination angle')
-parser.add_argument('--ndays', type=float, default=72, help='Number of observation days')
 parser.add_argument('--realizations', type=np.int32, default=1000, help='Realizations for MonteCarlo')
 parser.add_argument('--freqmin', type=float, default=0.5, help='Minimum freq in mHz')
 parser.add_argument('--freqmax', type=float, default=5.5, help='Maximum freq in mHz')
@@ -35,9 +31,6 @@ assert ARGS.freqmax>ARGS.freqmin, "maxfreq < minfreq; exiting"
 
 
 scratch_dir = f"/scratch/seismo/kashyap/processed/sun-intg"
-data_dir = f"{scratch_dir}/data/{ARGS.source}-{ARGS.channel}-Ncarr{ARGS.Ncarr}-skip{ARGS.skipmax:02d}"
-fits_dir = f"{scratch_dir}/ps-fits/{ARGS.source}-{ARGS.channel}-Ncarr{ARGS.Ncarr}-skip{ARGS.skipmax:02d}-ell{ARGS.lmax}-i{ARGS.inclang:02d}"
-
 
 def filter_butterworth_bandpass(_f1, tt1, forder=12,):
     """Applying butterworth filter to the observed spectra.
@@ -414,6 +407,8 @@ if __name__ == "__main__":
     #      - [x] cross-correlation should be fine as long as 0-padding is done
     # [x] integrate fitting using peak-bagged frequencies
     # [x] realistic estimation of errors in delnu -- notebook created
+
+    mode_dict = read_modeparams('modes_param.a2z')
 
     ell = np.load(f'{fits_dir}/fitted-ell-list.npy')
     enn = np.load(f'{fits_dir}/fitted-enn-list.npy')
