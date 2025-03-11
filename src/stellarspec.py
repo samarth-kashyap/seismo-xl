@@ -1,4 +1,4 @@
-__all__ = ["solarPS",
+__all__ = ["stellarPS",
            "refWavelets",
            "csCorrection",
            "greensFunctions",
@@ -12,6 +12,7 @@ import sys
 import logging
 import numpy as np
 from scipy.interpolate import interp1d
+from scipy.special import erf
 from pyshtools import legendre
 from ritzLavelyPy.rlclass import ritzLavelyPoly
 
@@ -29,27 +30,7 @@ def get_normed_cc(tmax_plot, tmin, tmax, C):
     return C[:tmax_plot]/np.amax(C[tmin:tmax])
 
 
-class frequencyBins():
-    """Frequency bins for modelling observed data."""
-    __attributes__ = ["T",
-                      "dt",
-                      "Nt",
-                      "omega_plus",
-                      "nu_plus"]
-
-    def __init__(self, T=2678460., dt=60.):
-        # default T=2678460. corresponds to 31 days and 1 minute
-        # default dt=60. corresponds to the cadence of VIRGO
-        self.T = T    # in seconds
-        self.dt = dt  # in seconds
-        self.Nt = int(self.T/self.dt)
-        homega = 2.*np.pi/self.T
-        self.omega_plus = np.arange((self.Nt+1)/2)*homega
-        self.nu_plus = self.omega_plus/2./np.pi
-        self.t_plus = np.arange(0, T, dt)
-
-
-class solarPS(frequencyBins):
+class stellarPS():
     """Class for constructing solar power spectrum."""
     __attributes__ = ["lmax",
                       "incl_angle",
@@ -66,6 +47,7 @@ class solarPS(frequencyBins):
                    "get_background_midfreq"]
 
     def __init__(self,
+                 freqarr=np.arange(10)*0.01,
                  lmax=3,
                  incl_angle=0.,
                  mode_ell=None,
@@ -77,28 +59,21 @@ class solarPS(frequencyBins):
                  include_mgfcorr=False,
                  mgf_corr_freq=None,
                  mgf_corr_nl=None,
-                 rot_rate=450.e-9,
                  a1rot=435.e-9,
                  a3rot=-10.7e-9,
                  fwhm_scale=1.0,
                  mode_min_nu=0.6e-3,
-                 mode_max_nu=4.0e-3,
-                 cadence=60.,
-                 obs_ndays=72.):
-        super(solarPS, self).__init__()
-        self.cadence = cadence
-        self.obs_ndays = obs_ndays
-        day2sec = 3600.*24
-        self.time_arr = np.arange(0, self.obs_ndays*day2sec, self.cadence)
-        self.nu_plus  = np.fft.rfftfreq(len(self.time_arr), d=self.cadence)
+                 mode_max_nu=4.0e-3,):
+        super(stellarPS, self).__init__()
+        self.nu_plus  = freqarr*1.
         self.omega_plus = self.nu_plus*2*np.pi
         self.lmax = lmax
         self.incl_angle = incl_angle
         self.cosi = np.cos(incl_angle)
-        self.rot_rate = rot_rate  # Hz
         self.a1rot = a1rot
         self.a3rot = a3rot
         self.acoeffs = np.array([0., a1rot, 0., a3rot])
+        self.rot_rate = self.acoeffs[1]
         self.mode_ell = mode_ell
         self.mode_enn = mode_enn
         self.mode_nu = mode_nu
@@ -328,16 +303,10 @@ class solarPS(frequencyBins):
 
 
     def construct_ps_list(self, ell=1, visibility_matrix=True, stahn=True, return_nl_list=False, shiftfreq=0.0, shiftenn=-10):
-        if not stahn or ell>2:
-            mask_ell = self.mode_ell==ell
-            if ell>3:
-                _mask_nu = (self.mode_nu<self.mode_max_nu)*(self.mode_nu>self.mode_min_nu)
-                mask_ell = mask_ell * _mask_nu
-            enn_ell = self.mode_enn[mask_ell]
-            nu_ell = self.mode_nu[mask_ell]
-            fwhm_ell = self.mode_fwhm[mask_ell]
-        else:
-            enn_ell, nu_ell, fwhm_ell = self.get_gapfilled_nunl(ell)
+        mask_ell = self.mode_ell==ell
+        enn_ell = self.mode_enn[mask_ell]
+        nu_ell = self.mode_nu[mask_ell]
+        fwhm_ell = self.mode_fwhm[mask_ell]
         num_modes = len(nu_ell)
         ps_list = []
         ps_nlm_list = []
@@ -345,7 +314,6 @@ class solarPS(frequencyBins):
         ell_list = []
         nu_list = []
         gamma_list = []
-
 
         if ell>1:
             RLP = ritzLavelyPoly(ell, jmax=3)
@@ -422,20 +390,12 @@ class solarPS(frequencyBins):
         :ps_nl: power spectrum constructed usign sum of lorentzians
         :type: np.ndarray(ndim=1, dtype=np.float)
         """
-        if not stahn or ell>2:
-            mask_ell = self.mode_ell==ell
-            mask_enn = self.mode_enn==enn
-            mask_all = mask_ell * mask_enn
-            if ell>3:
-                _mask_nu = (self.mode_nu<self.mode_max_nu)*(self.mode_nu>self.mode_min_nu)
-                mask_ell = mask_ell * _mask_nu
-            nu0 = self.mode_nu[mask_all] + shiftfreq
-            fwhm0 = self.mode_fwhm[mask_all]*scalefwhm
-        else:
-            enn_ell, nu_ell, fwhm_ell = self.get_gapfilled_nunl(ell)
-            idx = np.argmin(abs(enn_ell - enn))
-            nu0 = nu_ell[idx] + shiftfreq
-            fwhm0 = fwhm_ell[idx]*scalefwhm
+        
+        mask_ell = self.mode_ell==ell
+        mask_enn = self.mode_enn==enn
+        mask_all = mask_ell * mask_enn
+        nu0 = self.mode_nu[mask_all] + shiftfreq
+        fwhm0 = self.mode_fwhm[mask_all]*scalefwhm
 
         ps_nlm = []
 
@@ -646,6 +606,37 @@ class solarPS(frequencyBins):
         else:
             LOGGER.error(f"Invalid envelope type {type}")
         return F
+    
+    def bg_apollinaire(self, param, n_harvey=2,):
+        '''Compute background model compatible with apollinaire.'''
+        def extract_param (param, n_harvey,):
+            '''Extract param_harvey, param_gaussian and white noise'''
+            assert len(param)==int(n_harvey*3+4), 'Length of parameter vector inconsistent'
+            param_harvey = param[:n_harvey*3]
+            param_gaussian = param[n_harvey*3:n_harvey*3+3]
+            white_noise = param[-1]
+            return param_harvey, param_gaussian, white_noise
+
+        def harvey(freq, A, nu_c, alpha):
+            '''Compute empirical Harvey law.'''
+            num = A
+            den = 1. + np.power (freq/nu_c , alpha)
+            h = num / den
+            return h
+
+        def gauss_env(freq, Hmax, numax, Wenv, asy=0) :
+            '''Compute p-modes Gaussian envelope. '''
+            return Hmax*np.exp(-np.power((freq-numax)/Wenv, 2))*0.5*(1 + erf((freq-numax)* asy/Wenv))
+
+        model = np.zeros(self.nu_plus.size)
+        param_harvey, param_gaussian, noise = extract_param(param, n_harvey)
+        param_harvey = np.reshape(param_harvey, (n_harvey, param_harvey.size//n_harvey))
+        for elt in param_harvey:
+            print(elt)
+            model += harvey(self.nu_plus, *elt)
+        model += gauss_env(self.nu_plus, *param_gaussian)
+        model += noise
+        return model
 
     def get_background_lowfreq(self, type='stahn-nu', A1=1.607, A2=0.542, Ap=1.0, **kwargs):
         """Computes the non-seismic background. There are two different types of background
@@ -743,6 +734,10 @@ class solarPS(frequencyBins):
                   2*sig3*sig3*t3/(1 + (t3*self.omega_plus)**2) +
                   2*sig4*sig4*t4/(1 + (t4*self.omega_plus)**2) +
                   Ap*noise_photon)
+        elif type=='apollinaire':
+            param = kwargs['param']
+            n_harvey = kwargs['n_harvey']
+            bg = self.bg_apollinaire(param, n_harvey=n_harvey)
         return bg
 
 
@@ -821,7 +816,7 @@ class solarPS(frequencyBins):
 
 
 
-class visibilityMatrix(solarPS):
+class visibilityMatrix(stellarPS):
     """Class to generate visibility-matrix for computing change in mode-visibility
     due to inclination angle."""
     __attributes__ = ["cosi"]

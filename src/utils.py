@@ -31,6 +31,21 @@ def read_modeparams(fname):
 
 def read_a2z(fname):
     def combine_GAf_data(gamma, amp, freq, ampl):
+        def remove_duplicates(data):
+            enn = data[:, 0]
+            ell = data[:, 1]
+            new_data = []
+            for _ell in np.unique(ell):
+                maskell = ell==_ell
+                uniqn = np.unique(enn[maskell])
+                for _enn in uniqn:
+                    try:
+                        idx = np.where(maskell*(enn==_enn))[0][0]
+                        new_data.append([_enn, _ell, *data[idx, 2:]])
+                    except IndexError:
+                        continue
+            return np.array(new_data)
+        
         newdata = []
         enns = np.unique([*freq[:, 0].astype('int'), *amp[:, 0].astype('int')])
         ells = freq[:, 1].astype('int')
@@ -46,7 +61,10 @@ def read_a2z(fname):
                     newdata.append(_newdata)
                 else:
                     continue
-        return np.array(newdata)
+        newdata = np.array(newdata)
+        newdata = remove_duplicates(newdata)
+        return newdata
+
 
     # Initialize an empty list to store the parsed data
     data = []
@@ -94,4 +112,24 @@ def read_a2z(fname):
     ampl_data = np.array(ampl_data)
 
     mode_data = combine_GAf_data(width_data, height_data, freq_data, ampl_data)
-    return mode_data
+    mode_cols = ['enn', 'ell', 'freq', 'amp', 'gamma']
+    return mode_data, mode_cols
+
+
+
+def read_bgparams(fname):
+    with open(fname) as f:
+        data = f.read().splitlines()
+    
+    param = []
+    for _data in data[1:]:
+        param.append(float(_data.split(' ')[0]))
+
+    # converting from muHz to Hz
+    muHz_to_Hz = 1e-6
+    param[0] *= 4
+    param[1] *= muHz_to_Hz
+    param[4] *= muHz_to_Hz
+    param[7] *= muHz_to_Hz
+    param[8] *= muHz_to_Hz
+    return np.array(param)

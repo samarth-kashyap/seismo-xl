@@ -1,15 +1,16 @@
+import sys
 import numpy as np
 import h5py
 import argparse
 import matplotlib.pyplot as plt
 from tqdm import tqdm
-from src.utils import read_modeparams
 from src.utils import read_a2z
+from src.utils import read_bgparams
 from scipy.optimize import curve_fit
 
 # Local imports
 from src.globalvars import globalVars
-from src.solarspec import solarPS
+from src.stellarspec import stellarPS
 
 # Defining some global variables
 GVARS = globalVars()
@@ -19,6 +20,8 @@ mode_data = read_a2z('modes_param.a2z')
 #--------------------- ARGUMENT PARSER ---------------------------------
 parser = argparse.ArgumentParser(description='Process some integers.')
 parser.add_argument('--skipmax', type=int, default=40, help='Maximum skip number (default=40)')
+parser.add_argument('--inclang', type=float, default=45., help='Inclination angle')
+parser.add_argument('--ndays', type=float, default=90., help='Length of sub-series (days)')
 parser.add_argument('--realizations', type=np.int32, default=1000, help='Realizations for MonteCarlo')
 parser.add_argument('--freqmin', type=float, default=0.5, help='Minimum freq in mHz')
 parser.add_argument('--freqmax', type=float, default=5.5, help='Maximum freq in mHz')
@@ -31,29 +34,6 @@ assert ARGS.freqmax>ARGS.freqmin, "maxfreq < minfreq; exiting"
 
 
 scratch_dir = f"/scratch/seismo/kashyap/processed/sun-intg"
-
-def filter_butterworth_bandpass(_f1, tt1, forder=12,):
-    """Applying butterworth filter to the observed spectra.
-
-    Parameters
-    ----------
-    :_f1: Frequency array
-    :type: np.ndarray(ndim=1, dtype=np.float64)
-
-    :tt1: Travel-time array
-    :type: np.ndarray(ndim=1, dtype=np.float64)
-
-    Returns
-    -------
-    :tt1_filtered: Filtered travel-time array
-    :type: np.ndarray(ndim=1, dtype=np.float64)
-    """
-    freqmin = ARGS.freqmin*1e-3
-    freqmax = ARGS.freqmax*1e-3
-    b, a = signal.butter(forder, 1./(period_min_yr*365.*24.*3600.), 'low', analog=True)
-    w, h = signal.freqs(b, a, worN=_f1)
-    tt1_filtered = np.fft.irfft(abs(h)*np.fft.rfft(tt1))
-    return tt1_filtered
 
 
 def get_freqlags(refarr, pfilt_list, maxlag=20):
@@ -175,8 +155,8 @@ def get_pslbg(SPS, visibility_matrix=True, return_nl_list=True):
 
     Parameters
     ----------
-    :SPS: instance of class src.model.cross_covariance.solarPS
-    :type: solarPS
+    :SPS: instance of class src.stellarspec.stellarPS
+    :type: stellarPS
 
     :visibility_matrix: Set True to include corrections due to visibility matrix
     :type: bool (default: True)
@@ -205,18 +185,16 @@ def get_pslbg(SPS, visibility_matrix=True, return_nl_list=True):
     nu_list = []
     gamma_list = []
     ps_nlm_dict = {}
-    if ARGS.source=="bison":
-        bgtype = "bison"
-    else:
-        bgtype = "stahn-nu"
-    bgl.append(SPS.get_background_lowfreq(A1=1.0, A2=0.0, Ap=0.0, type=bgtype))
-    bgl.append(SPS.get_background_lowfreq(A1=0.0, A2=1.0, Ap=0.0, type=bgtype))
+    bgtype = 'apollinaire'
+    kwargs = {'n_harvey': 2,
+              'param': read_bgparams('mcmc_background_mean.dat')}
+    bgl.append(SPS.get_background_lowfreq(A1=1.0, A2=0.0, Ap=0.0, type=bgtype, **kwargs))
+    bgl.append(SPS.get_background_lowfreq(A1=0.0, A2=1.0, Ap=0.0, type=bgtype, **kwargs))
 
-    for ell in range(SPS.lmax+1):
-        psl, enns, ells, nus, gammas = SPS.construct_ps_list(ell=ell,
+    for _ell in range(SPS.lmax+1):
+        psl, enns, ells, nus, gammas = SPS.construct_ps_list(ell=_ell,
                                                              visibility_matrix=visibility_matrix,
                                                              return_nl_list=return_nl_list)
-        print(f"Num modes [ell={ell:d}] = {len(ells)}")
         psl_ells = [*psl_ells, *psl[0]]
         psl_nlm = [*psl_nlm, *psl[1]]
         ell_list = [*ell_list, *ells]
@@ -225,9 +203,9 @@ def get_pslbg(SPS, visibility_matrix=True, return_nl_list=True):
         gamma_list = [*gamma_list, *gammas]
 
         for _enn in enns:
-            _psnlm = SPS.construct_ps_normed_nlm(enn=_enn, ell=ell, shiftfreq=0.,
+            _psnlm = SPS.construct_ps_normed_nlm(enn=_enn, ell=_ell, shiftfreq=0.,
                                                  scalefwhm=1., stahn=True)
-            ps_nlm_dict[f"{ell:d}-{_enn:02d}"] = _psnlm
+            ps_nlm_dict[f"{_ell:d}-{_enn:02d}"] = _psnlm
             
 
     psl_bg = [*psl_ells, *bgl]
@@ -395,56 +373,50 @@ def testfunc():
 
 
 if __name__ == "__main__":
-    ## TODO LIST
-    # [x]  amplitudes and lorentzians for different ell
-    # [x]  amplitudes and lorentizians for different (ell, emm) combos
-    # [x]  load gfilter
-    # [x]  separate background fitting
-    # [x]  add frequency filtering -- better to add a butterworth filter,
-    #      rather than just filtering out a part of the spectrum
-    #      - [x] basic filtering (rectangular filter)
-    #      - [x] smooth filtering (butterworth filter)
-    #      - [x] cross-correlation should be fine as long as 0-padding is done
-    # [x] integrate fitting using peak-bagged frequencies
-    # [x] realistic estimation of errors in delnu -- notebook created
+    mode_dict, mode_cols = read_a2z('modes_param.a2z')
 
-    mode_dict = read_modeparams('modes_param.a2z')
+    enn = mode_dict[:, 0].astype('int')
+    ell = mode_dict[:, 1].astype('int')
+    nus  = mode_dict[:, 2]*1e-6
+    amps = mode_dict[:, 3]
+    fwhm  = mode_dict[:, 4]*1e-6
 
-    ell = np.load(f'{fits_dir}/fitted-ell-list.npy')
-    enn = np.load(f'{fits_dir}/fitted-enn-list.npy')
-    nus = np.load(f'{fits_dir}/fitted-nu-list-mod.npy')
-    fwhm = np.load(f'{fits_dir}/fitted-fwhm-list-mod.npy')
-    pobs = np.load(f'{data_dir}/psref.npy')
-    amps = np.load(f'{fits_dir}/fitted-mode-amplitudes.npy')
-    amps_llk = np.load(f'{fits_dir}/fitted-mode-amplitudes-mod.npy')
-    bgamps = np.load(f'{fits_dir}/fitted-mode-amplitudes-mod.npy')[-2:]
-    kth = np.load(f'{fits_dir}/numean-kernels.npy')
-    years = np.load(f'{data_dir}/years.npy')
-    bsp = np.load('/scratch/seismo/kashyap/processed/sun-intg/bsp-basis/bsp_knotnum_15.npy')
-    amps_llk[-2:] = bgamps
-    amps_llk = amps*1.0
+    #pref1 = np.load('data/pref8006161.npy')
+    #fref1 = np.load('data/freq8006161.npy')
+    day2sec = 24*3600.
+    rot_period = 31.71*day2sec # days (A&A 682, A67, 2024 - Breton, Lanza, Messina)
+    a1rot = 1/rot_period
 
-    SPS = solarPS(lmax=ARGS.lmax,
-                  mode_ell=ELLS,
-                  mode_enn=ENNS,
-                  mode_nu=NUS,
-                  mode_fwhm=FWHMS,
-                  mode_sigfwhm=SIG_FWHMS,
-                  incl_angle=ARGS.inclang*np.pi/180.,
-                  cadence=60.,
-                  obs_ndays=ARGS.ndays*1.0,)
+    pschunks = np.load('data/pschunks-8006161.npy')*1e-9
+    fref = np.load('data/freqchunks-8006161.npy')
+    pref = pschunks.mean(axis=0)
+
+    SPS = stellarPS(fref, 
+                    lmax=3,
+                    mode_ell=ell*1,
+                    mode_enn=enn*1,
+                    mode_nu=nus*1.,
+                    mode_fwhm=fwhm*1.,
+                    mode_sigfwhm=fwhm*0.1,
+                    incl_angle=ARGS.inclang*np.pi/180.,
+                    a1rot=a1rot,
+                    a3rot=0.,
+                    mode_max_nu=5.e-3,)
     freq_arr = SPS.nu_plus
     freq_mhz = freq_arr*1e3
     MASK_FREQ = (freq_mhz>=ARGS.freqmin)*(freq_mhz<=ARGS.freqmax)
-
     freq_arr = freq_arr[MASK_FREQ]
     freq_mhz = freq_mhz[MASK_FREQ]
 
-    gfilter = gaussian_gfilt(freq_arr*1e3, 3.0, 2.0)
+    gfilter = gaussian_gfilt(freq_arr*1e3, 3.616, 1.5)
     print(f'LOADING SUCESS')
     psdict, fmhz, enn_list, ell_list, nu_list, gamma_list = get_pslbg(SPS, return_nl_list=True)
     psl_bg, ps_nlm_dict = psdict
     psl_bg = psl_bg[:, MASK_FREQ]
+    pschunks = pschunks[:, MASK_FREQ]*gfilter[None, :]
+
+    psfit = (amps @ psl_bg[:-2] + psl_bg[-1])*gfilter
+    pref_arr = pref[MASK_FREQ]*gfilter
 
     assert np.prod(ell_list==ell), "Loaded amplitudes for ell dont match the current ell_list"
     assert np.prod(enn_list==enn), "Loaded amplitudes for enn dont match the current enn_list"
@@ -454,57 +426,38 @@ if __name__ == "__main__":
     mask2 = np.array(ell_list)==2
     mask3 = np.array(ell_list)==3
 
-    bgfit = amps_llk[-2:] @ psl_bg[-2:]
-    psfit = amps_llk @ psl_bg
+    fig, axs = plt.subplots(nrows=2, ncols=1)
+    axs[0].plot(freq_mhz, pschunks[0]/gfilter, 'k', label='Observed')
+    axs[0].plot(freq_mhz, psfit/gfilter, 'r', label='Model')
+    axs[0].legend()
+    axs[0].set_title('Power spectrum')
+    axs[1].plot(freq_mhz, pschunks[0]/psfit, 'k')
+    axs[1].set_title('$P^\\mathrm{model}/P^\\mathrm{observed}$')
+    for _axs in axs:
+        _axs.set_xscale('log')
+        _axs.set_yscale('log')
+    axs[1].set_xticks(np.arange(1, 5))
+    fig.supxlabel('Frequency [mHz]')
+    fig.supylabel('Power [ppm^2/muHz]')
 
-    plt.figure()
-    plt.plot(freq_arr*1e3, psfit)
-    plt.xlabel('Frequency in mHz')
+    bgfit = psl_bg[-1]*1.
     print(f"----Number of frequency bins = {len(freq_arr)}")
 
-    # Computing the filtered power spectra
-    pmod0 = np.squeeze((amps_llk[:-2][mask0] @ psl_bg[:-2][mask0, :] + bgfit)*gfilter)
-    pmod1 = np.squeeze((amps_llk[:-2][mask1] @ psl_bg[:-2][mask1, :] + bgfit)*gfilter)
-    pmod2 = np.squeeze((amps_llk[:-2][mask2] @ psl_bg[:-2][mask2, :] + bgfit)*gfilter)
-    pmod3 = np.squeeze((amps_llk[:-2][mask3] @ psl_bg[:-2][mask3, :] + bgfit)*gfilter)
-
-    # Computing shifted power spectra
-    shiftval_list = [5, 7, 10, 15, 20]
-    shiftval = -shiftval_list[1]
-    dfreq = (freq_mhz[1] - freq_mhz[0])*1e3
-    print(f"Defined delnu = {shiftval*dfreq:.2f} muHz")
-    pmod0s = np.squeeze((amps_llk[:-2][mask0] @ np.roll(psl_bg[:-2][mask0, :], shiftval, axis=1) + bgfit)*gfilter)
-    pmod1s = np.squeeze((amps_llk[:-2][mask1] @ np.roll(psl_bg[:-2][mask1, :], shiftval, axis=1) + bgfit)*gfilter)
-    pmod2s = np.squeeze((amps_llk[:-2][mask2] @ np.roll(psl_bg[:-2][mask2, :], shiftval, axis=1) + bgfit)*gfilter)
-    pmod3s = np.squeeze((amps_llk[:-2][mask3] @ np.roll(psl_bg[:-2][mask3, :], shiftval, axis=1) + bgfit)*gfilter)
-
-    pmod0123s = (np.squeeze(amps_llk[:-2][mask0] @ np.roll(psl_bg[:-2][mask0, :], shiftval, axis=1)) +
-                np.squeeze(amps_llk[:-2][mask1] @ np.roll(psl_bg[:-2][mask1, :], shiftval, axis=1)) +
-                np.squeeze(amps_llk[:-2][mask2] @ np.roll(psl_bg[:-2][mask2, :], shiftval, axis=1)) +
-                np.squeeze(amps_llk[:-2][mask3] @ np.roll(psl_bg[:-2][mask3, :], shiftval, axis=1)) + bgfit)*gfilter
-
-    pexc0 = np.squeeze((psfit - amps_llk[:-2][mask0] @ psl_bg[:-2][mask0, :] - bgfit)*gfilter)
-    pexc1 = np.squeeze((psfit - amps_llk[:-2][mask1] @ psl_bg[:-2][mask1, :] - bgfit)*gfilter)
-    pexc2 = np.squeeze((psfit - amps_llk[:-2][mask2] @ psl_bg[:-2][mask2, :] - bgfit)*gfilter)
-    pexc3 = np.squeeze((psfit - amps_llk[:-2][mask3] @ psl_bg[:-2][mask3, :] - bgfit)*gfilter)
-
-    # pexc0 = psfit*gfilter - pmod0
-    # pexc1 = psfit*gfilter - pmod1
-    # pexc2 = psfit*gfilter - pmod2
-    # pexc3 = psfit*gfilter - pmod3
-
-    pfilt_list = [pmod0, pmod1, pmod2, pmod3]
-    pmods_list = [pmod0s, pmod1s, pmod2s, pmod3s]
-    pexcl_list = [pexc0, pexc1, pexc2, pexc3]
+    # Computing the MI filters
+    pfilt0 = np.squeeze((amps[mask0] @ psl_bg[:-2][mask0, :] + bgfit)*gfilter)
+    pfilt1 = np.squeeze((amps[mask1] @ psl_bg[:-2][mask1, :] + bgfit)*gfilter)
+    pfilt2 = np.squeeze((amps[mask2] @ psl_bg[:-2][mask2, :] + bgfit)*gfilter)
+    pfilt3 = np.squeeze((amps[mask3] @ psl_bg[:-2][mask3, :] + bgfit)*gfilter)
+    pfilt_list = [pfilt0, pfilt1, pfilt2, pfilt3]
     pfilt_list = np.array(pfilt_list)
+
+    # Computing the LC term
+    pexc0 = np.squeeze((psfit - amps[mask0] @ psl_bg[:-2][mask0, :] - bgfit)*gfilter)
+    pexc1 = np.squeeze((psfit - amps[mask1] @ psl_bg[:-2][mask1, :] - bgfit)*gfilter)
+    pexc2 = np.squeeze((psfit - amps[mask2] @ psl_bg[:-2][mask2, :] - bgfit)*gfilter)
+    pexc3 = np.squeeze((psfit - amps[mask3] @ psl_bg[:-2][mask3, :] - bgfit)*gfilter)
+    pexcl_list = [pexc0, pexc1, pexc2, pexc3]
     pexcl_list = np.array(pexcl_list)
-
-    c0f, c1f, c2f, c3f, fig, axs = testfunc()
-    fig.show()
-
-    tfile = h5py.File('data/test.h5')
-
-
     sys.exit()
 
     coll0123 = compute_delnu(pmods_list, pfilt_list, pexcl_list, corrected=False)
@@ -521,7 +474,7 @@ if __name__ == "__main__":
 
     collect_fitval = []
     for idx in tqdm(range(ARGS.realizations), desc='MonteCarlo combined'):
-        __a0, __a00 = get_freqlags(noisify(pmod0123s), np.array([psfit*gfilter,]))
+        __a0, __a00 = get_freqlags(noisify(pfilt0123s), np.array([psfit*gfilter,]))
         collect_fitval.append(__a00[1][0])
     collect_fitval = np.array(collect_fitval)
     print(f"===============================================================")

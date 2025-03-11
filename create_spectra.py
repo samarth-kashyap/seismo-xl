@@ -7,7 +7,7 @@ from scipy.optimize import curve_fit
 
 # Local imports
 from src.globalvars import globalVars
-from src.solarspec import solarPS
+from stellarspec import solarPS
 
 # Defining some global variables
 GVARS = globalVars()
