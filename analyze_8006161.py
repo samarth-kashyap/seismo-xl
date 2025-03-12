@@ -14,36 +14,29 @@ from src.stellarspec import stellarPS
 
 # Defining some global variables
 GVARS = globalVars()
-mode_data = read_a2z('modes_param.a2z')
 # mode data is written as enn, ell, freq, A, gamma
 
 #--------------------- ARGUMENT PARSER ---------------------------------
 parser = argparse.ArgumentParser(description='Process some integers.')
-parser.add_argument('--skipmax', type=int, default=40, help='Maximum skip number (default=40)')
+parser.add_argument('--Navg', type=int, default=90 ,help='Length of sub-series (days)')
+parser.add_argument('--Nshift', type=int, default=15, help='Shift between sub-series (days)')
 parser.add_argument('--inclang', type=float, default=45., help='Inclination angle')
-parser.add_argument('--ndays', type=float, default=90., help='Length of sub-series (days)')
-parser.add_argument('--realizations', type=np.int32, default=1000, help='Realizations for MonteCarlo')
 parser.add_argument('--freqmin', type=float, default=0.5, help='Minimum freq in mHz')
 parser.add_argument('--freqmax', type=float, default=5.5, help='Maximum freq in mHz')
 ARGS = parser.parse_args()
 #----------------------------------------------------------------------------
-
 assert ARGS.freqmin>0. and ARGS.freqmax<10., "Min freq out of range"
 assert ARGS.freqmax>0. and ARGS.freqmax<10., "Max freq out of range"
 assert ARGS.freqmax>ARGS.freqmin, "maxfreq < minfreq; exiting"
 
-
 scratch_dir = f"/scratch/seismo/kashyap/processed/sun-intg"
-
 
 def get_freqlags(refarr, pfilt_list, maxlag=20):
     # print(f"max frequency lag = {maxlag*dfreq:.2f} muHz")
-    
     # corr_mat stores the correlation matrix [ell, time_chunk, lag]
     # corr_mat_gauss stores the gaussian fit [ell, time_chunk, lag]
     # corr_matarg stores the index corresponding to maximum corr [ell, time_chunk]
     # corr_matarg_gauss max corr for the gaussian fit [ell, time_chunk]
-    
     corr_mat = np.zeros((4, 2*maxlag+1))
     corr_mat_gauss = np.zeros((4, 2*maxlag+1))
     corr_matarg = np.zeros(4)
@@ -186,10 +179,12 @@ def get_pslbg(SPS, visibility_matrix=True, return_nl_list=True):
     gamma_list = []
     ps_nlm_dict = {}
     bgtype = 'apollinaire'
-    kwargs = {'n_harvey': 2,
-              'param': read_bgparams('mcmc_background_mean.dat')}
-    bgl.append(SPS.get_background_lowfreq(A1=1.0, A2=0.0, Ap=0.0, type=bgtype, **kwargs))
-    bgl.append(SPS.get_background_lowfreq(A1=0.0, A2=1.0, Ap=0.0, type=bgtype, **kwargs))
+    bgl.append(np.loadtxt(f'./results/{suffix}/background.dat'))
+    print(bgl[-1].shape)
+    #kwargs = {'n_harvey': 2,
+    #          'param': read_bgparams(f'./results/{suffix}/mcmc_background_mean.dat')}
+    #bgl.append(SPS.get_background_lowfreq(A1=1.0, A2=0.0, Ap=0.0, type=bgtype, **kwargs))
+    #bgl.append(SPS.get_background_lowfreq(A1=0.0, A2=1.0, Ap=0.0, type=bgtype, **kwargs))
 
     for _ell in range(SPS.lmax+1):
         psl, enns, ells, nus, gammas = SPS.construct_ps_list(ell=_ell,
@@ -209,9 +204,10 @@ def get_pslbg(SPS, visibility_matrix=True, return_nl_list=True):
             
 
     psl_bg = [*psl_ells, *bgl]
+    print(psl_bg[0].shape)
     psl_nlm = [*psl_nlm, *bgl]
     ps_nlm_dict["bg1"] = bgl[0]
-    ps_nlm_dict["bg2"] = bgl[1]
+    #ps_nlm_dict["bg2"] = bgl[1]
     psl_bg = np.array(psl_bg)
     if return_nl_list:
         return (psl_bg, ps_nlm_dict), fmhz, enn_list, ell_list, nu_list, gamma_list
@@ -373,7 +369,9 @@ def testfunc():
 
 
 if __name__ == "__main__":
-    mode_dict, mode_cols = read_a2z('modes_param.a2z')
+    suffix = "longts"
+    suffix = f"N{int(ARGS.Navg)}-s{int(ARGS.Nshift)}"
+    mode_dict, mode_cols = read_a2z(f'/data/seismo/kashyap/codes/p11-seismo-xl/results/{suffix}/modes_param.a2z')
 
     enn = mode_dict[:, 0].astype('int')
     ell = mode_dict[:, 1].astype('int')
@@ -381,14 +379,19 @@ if __name__ == "__main__":
     amps = mode_dict[:, 3]
     fwhm  = mode_dict[:, 4]*1e-6
 
-    #pref1 = np.load('data/pref8006161.npy')
-    #fref1 = np.load('data/freq8006161.npy')
     day2sec = 24*3600.
     rot_period = 31.71*day2sec # days (A&A 682, A67, 2024 - Breton, Lanza, Messina)
     a1rot = 1/rot_period
+    pschunks = np.load(f'data/pschunks-8006161-{suffix}.npy')*1e-9
 
-    pschunks = np.load('data/pschunks-8006161.npy')*1e-9
-    fref = np.load('data/freqchunks-8006161.npy')
+
+    # ?? Temporary fix; this is not needed in the next version
+    if suffix=='longts':
+        pschunks *= 1e-9
+    fref = np.load(f'data/freq-8006161-{suffix}.npy')
+    cond  = (fref*1e6>150.)*(fref*1e6<6000.)
+    fref = fref[cond]
+    pschunks = pschunks[:, cond]
     pref = pschunks.mean(axis=0)
 
     SPS = stellarPS(fref, 
@@ -415,7 +418,7 @@ if __name__ == "__main__":
     psl_bg = psl_bg[:, MASK_FREQ]
     pschunks = pschunks[:, MASK_FREQ]*gfilter[None, :]
 
-    psfit = (amps @ psl_bg[:-2] + psl_bg[-1])*gfilter
+    psfit = (amps @ psl_bg[:-1] + psl_bg[-1])*gfilter
     pref_arr = pref[MASK_FREQ]*gfilter
 
     assert np.prod(ell_list==ell), "Loaded amplitudes for ell dont match the current ell_list"
@@ -431,7 +434,7 @@ if __name__ == "__main__":
     axs[0].plot(freq_mhz, psfit/gfilter, 'r', label='Model')
     axs[0].legend()
     axs[0].set_title('Power spectrum')
-    axs[1].plot(freq_mhz, pschunks[0]/psfit, 'k')
+    axs[1].plot(freq_mhz, pschunks.mean(axis=0)/psfit, 'k')
     axs[1].set_title('$P^\\mathrm{model}/P^\\mathrm{observed}$')
     for _axs in axs:
         _axs.set_xscale('log')
@@ -444,18 +447,18 @@ if __name__ == "__main__":
     print(f"----Number of frequency bins = {len(freq_arr)}")
 
     # Computing the MI filters
-    pfilt0 = np.squeeze((amps[mask0] @ psl_bg[:-2][mask0, :] + bgfit)*gfilter)
-    pfilt1 = np.squeeze((amps[mask1] @ psl_bg[:-2][mask1, :] + bgfit)*gfilter)
-    pfilt2 = np.squeeze((amps[mask2] @ psl_bg[:-2][mask2, :] + bgfit)*gfilter)
-    pfilt3 = np.squeeze((amps[mask3] @ psl_bg[:-2][mask3, :] + bgfit)*gfilter)
+    pfilt0 = np.squeeze((amps[mask0] @ psl_bg[:-1][mask0, :] + bgfit)*gfilter)
+    pfilt1 = np.squeeze((amps[mask1] @ psl_bg[:-1][mask1, :] + bgfit)*gfilter)
+    pfilt2 = np.squeeze((amps[mask2] @ psl_bg[:-1][mask2, :] + bgfit)*gfilter)
+    pfilt3 = np.squeeze((amps[mask3] @ psl_bg[:-1][mask3, :] + bgfit)*gfilter)
     pfilt_list = [pfilt0, pfilt1, pfilt2, pfilt3]
     pfilt_list = np.array(pfilt_list)
 
     # Computing the LC term
-    pexc0 = np.squeeze((psfit - amps[mask0] @ psl_bg[:-2][mask0, :] - bgfit)*gfilter)
-    pexc1 = np.squeeze((psfit - amps[mask1] @ psl_bg[:-2][mask1, :] - bgfit)*gfilter)
-    pexc2 = np.squeeze((psfit - amps[mask2] @ psl_bg[:-2][mask2, :] - bgfit)*gfilter)
-    pexc3 = np.squeeze((psfit - amps[mask3] @ psl_bg[:-2][mask3, :] - bgfit)*gfilter)
+    pexc0 = np.squeeze((psfit - amps[mask0] @ psl_bg[:-1][mask0, :] - bgfit)*gfilter)
+    pexc1 = np.squeeze((psfit - amps[mask1] @ psl_bg[:-1][mask1, :] - bgfit)*gfilter)
+    pexc2 = np.squeeze((psfit - amps[mask2] @ psl_bg[:-1][mask2, :] - bgfit)*gfilter)
+    pexc3 = np.squeeze((psfit - amps[mask3] @ psl_bg[:-1][mask3, :] - bgfit)*gfilter)
     pexcl_list = [pexc0, pexc1, pexc2, pexc3]
     pexcl_list = np.array(pexcl_list)
     sys.exit()

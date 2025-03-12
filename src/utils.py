@@ -57,7 +57,6 @@ def read_a2z(fname):
                 maskgam  = (gamma[:, 0]==enn)
                 if maskfreq.sum()==1 and maskamp.sum()==1 and maskgam.sum()==1:
                     _newdata = [enn, ell, *freq[maskfreq, 2],  *(_ampl*amp[maskamp, 2]), *gamma[maskgam, 2]]
-                    print(_newdata)
                     newdata.append(_newdata)
                 else:
                     continue

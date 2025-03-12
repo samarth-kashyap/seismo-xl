@@ -7,3 +7,5 @@ modes*
 *.png
 data
 temp_pysyd
+logs
+*.slurm

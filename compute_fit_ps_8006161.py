@@ -10,6 +10,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--Navg', type=int, default=90 ,help='Length of sub-series (days)')
 parser.add_argument('--Nshift', type=int, default=15, help='Shift between sub-series (days)')
 parser.add_argument('--peakbag', action='store_true', help='Fit spectra')
+parser.add_argument('--Nmcmc', type=int, default=10000, help='Num of MCMC steps')
 ARGS = parser.parse_args()
 
 data_dir = "/data/seismo/kashyap/codes/p11-seismo-xl/data"
@@ -106,8 +107,11 @@ if __name__ == "__main__":
     pow_ref = pow_list.mean(axis=0)
     pshapelist = [pow.shape[0] for pow in pow_list]
     print(f"Shape of power spectrum = {np.unique(pshapelist)}")
+    outputdir = f"/data/seismo/kashyap/codes/p11-seismo-xl/results/N{ARGS.Navg}-s{ARGS.Nshift}"
+    os.system(f'mkdir {outputdir}')
     np.save(f"{data_dir}/pschunks-8006161-N{int(ARGS.Navg)}-s{int(ARGS.Nshift)}.npy", pow_list)
     np.save(f"{data_dir}/freq-8006161-N{int(ARGS.Navg)}-s{int(ARGS.Nshift)}.npy", freq_ref)
+    np.save(f"{data_dir}/tmid-8006161-N{int(ARGS.Navg)}-s{int(ARGS.Nshift)}.npy", np.array(tmid_list))
 
     freq_muhz = freq_ref*1e6
     psd = pow_list.mean(axis=0)*1e-9
@@ -118,6 +122,8 @@ if __name__ == "__main__":
     ax.plot (freq_muhz[cond], psd[cond], color='black')
     ax.set_xlabel (r'Frequency ($\mu$Hz)')
     ax.set_ylabel (r'PSD (ppm$^2$/$\mu$Hz)')
+    fig.tight_layout()
+    fig.savefig(f"{outputdir}/power_spectrum.png")
     dnu = 149.4
     r, m, teff = 0.931, 0.990, 5488
     ed = apn.psd.echelle_diagram(freq_muhz[cond], psd[cond], dnu, smooth=100,
@@ -125,19 +131,23 @@ if __name__ == "__main__":
                                 figsize=(8,6))
 
     order_to_fit = np.arange(10) + 16
-    outputdir = f"/data/seismo/kashyap/codes/p11-seismo-xl/results/N{ARGS.Navg}-s{ARGS.Nshift}"
     if ARGS.peakbag:
         print('Begin peakbagging')
-        os.system(f'mkdir {outputdir}')
         apn.peakbagging.stellar_framework(freq_muhz[cond], psd[cond], r, m, teff, 
                                         n_harvey=2, low_cut=50., dpi=300,
                                         filename_back=f'{outputdir}/background.png',
-                                        filemcmc_back=f'{outputdir}/mcmc_background.h5',nsteps_mcmc_back=2000, discard_back=1500,
+                                        filemcmc_back=f'{outputdir}/mcmc_background.h5',nsteps_mcmc_back=ARGS.Nmcmc, 
+                                        discard_back=int(0.75*ARGS.Nmcmc),
                                         n_order=6, n_order_peakbagging=11,
                                         filename_pattern=f'{outputdir}/pattern.png', fit_l3=True,
                                         filemcmc_pattern=f'{outputdir}/mcmc_pattern.h5',
-                                        nsteps_mcmc_pattern=5000, parallelise=True,
-                                        quickfit=False, discard_pkb=1000, progress=True,
-                                        nwalkers=50, a2z_file=f'{outputdir}/modes_param.a2z',
-                                        format_cornerplot='png', nsteps_mcmc_peakbagging=5000,
+                                        nsteps_mcmc_pattern=ARGS.Nmcmc, parallelise=True,
+                                        mcmcDir=outputdir,
+                                        quickfit=False, 
+                                        discard_pkb=int(0.75*ARGS.Nmcmc), 
+                                        progress=True,
+                                        nwalkers=50, 
+                                        a2z_file=f'{outputdir}/modes_param.a2z',
+                                        format_cornerplot='png', 
+                                        nsteps_mcmc_peakbagging=ARGS.Nmcmc,
                                         filename_peakbagging=f'{outputdir}/summary_peakbag.png',)
