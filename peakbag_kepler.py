@@ -1,8 +1,9 @@
 import os
 import argparse
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
-from sgkutils import readh5, saveh5
+from sgkutils import saveh5
 from astropy.io import fits
 import apollinaire as apn
 from scipy.interpolate import interp1d
@@ -13,10 +14,15 @@ parser.add_argument('--Nshift', type=int, default=15, help='Shift between sub-se
 parser.add_argument('--peakbag', action='store_true', help='Fit spectra')
 parser.add_argument('--Nmcmc', type=int, default=10000, help='Num of MCMC steps')
 parser.add_argument('--kic', type=int, default=8006161, help='KIC number')
+parser.add_argument('--nmin', type=int, default=16, help='Minimum radial order fitted')
+parser.add_argument('--nmax', type=int, default=26, help='Maximum radial order fitted')
+parser.add_argument('--freqmin', type=float, default=150., help='Min freq in muHz')
+parser.add_argument('--freqmax', type=float, default=6000., help='Max freq in muHz')
 ARGS = parser.parse_args()
 
+kicstr = f"{ARGS.kic:09d}"
 data_dir = "/data/seismo/kashyap/codes/p11-seismo-xl/data"
-output_dir = "/scratch/seismo/kashyap/processed/p11-seismo-xl"
+output_dir = f"/scratch/seismo/kashyap/processed/p11-seismo-xl/{kicstr}"
 
 def gaussian(x, mu, fwhm):
     """Returns a gaussian of chosen center and fwhm.
@@ -42,9 +48,24 @@ def gaussian(x, mu, fwhm):
     return gn
 
 
+
+def get_star_params():
+    sparams = pd.read_csv('./data/starparams.csv')
+    mask = sparams['kic']==ARGS.kic
+    dnu = sparams[mask]['dnu'][0]
+    r   = sparams[mask]['r'][0]
+    m   = sparams[mask]['m'][0]
+    teff = sparams[mask]['teff'][0]
+    return dnu, r, m, teff
+
+
 if __name__ == "__main__":
-    kicstr = f"{ARGS.kic:09d}"
+    day2sec = 24*3600.
+    filter_mu = 3.616*1e-3
+    filter_fwhm = 1.5e-3
+
     ts = fits.open(f'{data_dir}/kplr{kicstr}_kasoc-ts_slc_v1.fits')
+    
     tsdata = ts[1].data
     time = tsdata['TIME']
     flux = tsdata['FLUX']
@@ -63,12 +84,8 @@ if __name__ == "__main__":
 
     f1d = interp1d(time, flux, fill_value=0., bounds_error=False)
     flux_uni = f1d(time_uni)
-    freq = np.fft.rfftfreq(len(time_uni), d=dt_uni*24*3600.)
+    freq = np.fft.rfftfreq(len(time_uni), d=dt_uni*day2sec)
     powr = abs(np.fft.rfft(flux_uni))**2
-
-    day2sec = 24*3600.
-    filter_mu = 3.616*1e-3
-    filter_fwhm = 1.5e-3
 
     obs_days = time_uni[-1] - time_uni[0]
     num_chunks = int(obs_days//ARGS.Nshift)
@@ -108,19 +125,19 @@ if __name__ == "__main__":
     pow_ref = pow_list.mean(axis=0)
     pshapelist = [pow.shape[0] for pow in pow_list]
     assert len(np.unique(pshapelist))==1, "power spectra of sub-series have different lengths"
-    peakbagdir = f"/scratch/seismo/kashyap/processed/p11-seismo-xl/peakbag/N{ARGS.Navg}-s{ARGS.Nshift}"
+    peakbagdir = f"{output_dir}/peakbag-N{ARGS.Navg}-s{ARGS.Nshift}"
     savedict = {}
-    os.system(f'mkdir {peakbagdir}')
+    os.system(f'mkdir -p {peakbagdir}')
     savedict['pschunks'] = pow_list
     savedict['freq'] = freq_ref
     savedict['tmid_list'] = np.array(tmid_list)
 
     freq_muhz = freq_ref*1e6
     psd = pow_list.mean(axis=0)*1e-9
-    cond = (freq_muhz>150.)*(freq_muhz<6000.)
+
+    cond = (freq_muhz>ARGS.freqmin)*(freq_muhz<ARGS.freqmax)
     print(f"Number of freq bins = {cond.sum()}")
     savedict['fmask'] = cond
-    saveh5(f"{output_dir}/kplr{kicstr}-N{int(ARGS.Navg)}-s{int(ARGS.Nshift)}.h5", savedict)
 
     fig, ax = plt.subplots()
     ax.plot (freq_muhz[cond], psd[cond], color='black')
@@ -128,15 +145,19 @@ if __name__ == "__main__":
     ax.set_ylabel (r'PSD (ppm$^2$/$\mu$Hz)')
     fig.tight_layout()
     fig.savefig(f"{peakbagdir}/power_spectrum.png")
-    dnu = 149.4
-    r, m, teff = 0.931, 0.990, 5488
-    ed = apn.psd.echelle_diagram(freq_muhz[cond], psd[cond], dnu, smooth=100,
-                                cmap='Blues', shading='gouraud', vmax=0.5,
-                                figsize=(8,6))
+    # these values need to be read from a file
+    #dnu, r, m, teff = 149.4, 0.931, 0.990, 5488
+    dnu, r, m, teff = get_star_params()
+    savedict['freqmin_muhz'] = ARGS.freqmin
+    savedict['freqmax_muhz'] = ARGS.freqmax
+    savedict['dnu_muhz'] = dnu
+    savedict['r'] = r
+    savedict['m'] = m
+    savedict['teff'] = teff
+    saveh5(f"{output_dir}/kplr{kicstr}-N{int(ARGS.Navg)}-s{int(ARGS.Nshift)}.h5", savedict)
 
-    order_to_fit = np.arange(10) + 16
+    order_to_fit = np.arange(ARGS.nmin, ARGS.nmax)
     if ARGS.peakbag:
-        print('Begin peakbagging')
         apn.peakbagging.stellar_framework(freq_muhz[cond], psd[cond], r, m, teff, 
                                         n_harvey=2, low_cut=50., dpi=300,
                                         filename_back=f'{peakbagdir}/background.png',
@@ -150,7 +171,7 @@ if __name__ == "__main__":
                                         quickfit=False, 
                                         fit_angle=True,
                                         discard_pkb=int(0.75*ARGS.Nmcmc), 
-                                        progress=True,
+                                        progress=False,
                                         nwalkers=50, 
                                         a2z_file=f'{peakbagdir}/modes_param.a2z',
                                         format_cornerplot='png', 

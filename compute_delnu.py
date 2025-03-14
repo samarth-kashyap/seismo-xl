@@ -1,5 +1,3 @@
-import sys
-import h5py
 import argparse
 import numpy as np
 import pandas as pd
@@ -9,17 +7,9 @@ from scipy.interpolate import interp1d
 from scipy.optimize import curve_fit
 
 # Local imports
-from sgkutils import readh5
+from sgkutils import readh5, saveh5
 from src.utils import read_a2z
-from src.globalvars import globalVars
 from src.stellarspec import stellarPS
-
-# Defining some global variables
-GVARS = globalVars()
-PAPDIR = "/scratch/seismo/kashyap/cloud/Yandex.Disk/papers-posters-docs/2025-seismo-xl"
-scratch_dir = f"/scratch/seismo/kashyap/processed/p11-seismo-xl"
-santos_data = pd.read_csv('data/8006161.csv')
-# mode data is written as enn, ell, freq, A, gamma
 
 #--------------------- ARGUMENT PARSER ---------------------------------
 parser = argparse.ArgumentParser(description='Process some integers.')
@@ -36,6 +26,14 @@ assert ARGS.freqmin>0. and ARGS.freqmax<10., "Min freq out of range"
 assert ARGS.freqmax>0. and ARGS.freqmax<10., "Max freq out of range"
 assert ARGS.freqmax>ARGS.freqmin, "maxfreq < minfreq; exiting"
 
+kicstr = f"{ARGS.kic:09d}"
+PAPDIR = "/scratch/seismo/kashyap/cloud/Yandex.Disk/papers-posters-docs/2025-seismo-xl"
+scratch_dir = f"/scratch/seismo/kashyap/processed/p11-seismo-xl/{kicstr}"
+try:
+    santos_data = pd.read_csv(f'./data/santos2018-{kicstr}.csv')
+except FileNotFoundError:
+    pass
+
 
 def get_freqlags(refarr, pfilt_list, maxlag=20):
     # print(f"max frequency lag = {maxlag*dfreq:.2f} muHz")
@@ -51,7 +49,7 @@ def get_freqlags(refarr, pfilt_list, maxlag=20):
     lags_list, corr_list, corrnlist, corrbg_list = [], [], [], []
     for jdx in range(pfilt_list.shape[0]):
         p0 = [1., 0., 1., 0.]
-        lags, corr = compute_cc(pfilt_list[jdx]/1e10, refarr/1e10, maxlag=maxlag)
+        lags, corr = compute_cc(pfilt_list[jdx], refarr, maxlag=maxlag)
         try:
             coeff, var_matrix = curve_fit(gaussian, lags, corr, p0=p0)
         except RuntimeError:
@@ -62,62 +60,6 @@ def get_freqlags(refarr, pfilt_list, maxlag=20):
         corr_matarg[jdx] = lags[max_idx]
         corr_matarg_gauss[jdx] = coeff[1]
     return (corr_mat, corr_mat_gauss), (corr_matarg, corr_matarg_gauss)
-
-
-def get_freqlags_corrected(refarr, pfilt_list, pexcl_list, maxlag=20):
-    """Compute frequecy lags
-
-    Parameters
-    ----------
-    :refarr: Observed power spectrum
-    :type: np.ndarray(ndim=1, dtype=float)[freq]
-
-    :pfilt_list: List of MI filters for different ell
-    :type: np.ndarray(ndim=2, dtype=float)[ell, freq]
-
-    :pexcl_list: List of LC filters for different ell
-    :type: np.ndarray(ndim=2, dtype=float)[ell, freq]
-
-    :maxlag: Maximum number of indices for which cross-correlation is computed
-    :type: int
-
-    Returns
-    -------
-    """
-    # print(f"max frequency lag = {maxlag*dfreq:.2f} muHz")
-    # corr_mat stores the correlation matrix [ell, time_chunk, lag]
-    # corr_mat_gauss stores the gaussian fit [ell, time_chunk, lag]
-    # corr_matarg stores the index corresponding to maximum corr [ell, time_chunk]
-    # corr_matarg_gauss max corr for the gaussian fit [ell, time_chunk]
-
-    # things to check
-    # the leakage correction filter needs to be applied on pexcl_list or pfilt_list?
-    # this can significantly change things.
-    
-    corr_mat = np.zeros((4, 2*maxlag+1))
-    corr_mat_gauss = np.zeros((4, 2*maxlag+1))
-    corr_matarg = np.zeros(4)
-    corr_matarg_gauss = np.zeros(4)
-    
-    lags_list, corr_list, corrnlist, corrbg_list = [], [], [], []
-    for jdx in range(pfilt_list.shape[0]):
-        p0 = [1., 0., 1., 0.]
-        lags, corr = compute_cc(pfilt_list[jdx]/1e10, refarr/1e10, maxlag=maxlag)
-        # lags_bg, corr_bg = compute_cc(pfilt_list[jdx]/1e10, pexcl_list[jdx]/1e10, maxlag=maxlag)
-        lags_bg, corr_bg = compute_cc(pexcl_list[jdx]/1e10, refarr/1e10, maxlag=maxlag)
-        corr = corr - corr_bg
-        coeff = [0, 0, 0, 0]
-        try:
-            coeff, var_matrix = curve_fit(gaussian, lags, corr, p0=p0)
-        except RuntimeError:
-            coeff[1] = np.nan
-        corr_mat_gauss[jdx, :] = gaussian(lags, *coeff)
-        corr_mat[jdx, :] = corr
-        max_idx = np.argmax(corr)
-        corr_matarg[jdx] = lags[max_idx]
-        corr_matarg_gauss[jdx] = coeff[1]
-        corrbg_list.append(corr_bg)
-    return (corr_mat, corr_mat_gauss), (corr_matarg, corr_matarg_gauss), corrbg_list
 
 
 def gaussian_gfilt(x, mu, fwhm):
@@ -185,12 +127,8 @@ def get_pslbg(SPS, visibility_matrix=True, return_nl_list=True):
     gamma_list = []
     ps_nlm_dict = {}
     bgtype = 'apollinaire'
-    bgl.append(np.loadtxt(f'{scratch_dir}/peakbag/{suffix}/background.dat'))
+    bgl.append(np.loadtxt(f'{scratch_dir}/peakbag-{suffix}/background.dat'))
     print(bgl[-1].shape)
-    #kwargs = {'n_harvey': 2,
-    #          'param': read_bgparams(f'./results/{suffix}/mcmc_background_mean.dat')}
-    #bgl.append(SPS.get_background_lowfreq(A1=1.0, A2=0.0, Ap=0.0, type=bgtype, **kwargs))
-    #bgl.append(SPS.get_background_lowfreq(A1=0.0, A2=1.0, Ap=0.0, type=bgtype, **kwargs))
 
     for _ell in range(SPS.lmax+1):
         psl, enns, ells, nus, gammas = SPS.construct_ps_list(ell=_ell,
@@ -311,13 +249,13 @@ def get_freqlags_corrected(refarr, pfilt_list, pexcl_list, maxlag=20):
     # corr_matarg stores the index corresponding to maximum corr [ell, time_chunk]
     # corr_matarg_gauss max corr for the gaussian fit [ell, time_chunk]
     
-    corr_mat = np.zeros((4, 2*maxlag+1))
-    corr_mat_gauss = np.zeros((4, 2*maxlag+1))
-    corr_matarg = np.zeros(4)
-    corr_matarg_gauss = np.zeros(4)
+    corr_mat = np.zeros((ARGS.lmax, 2*maxlag+1))
+    corr_mat_gauss = np.zeros((ARGS.lmax, 2*maxlag+1))
+    corr_matarg = np.zeros(ARGS.lmax)
+    corr_matarg_gauss = np.zeros(ARGS.lmax)
     
     corrbg_list = []
-    for jdx in range(pfilt_list.shape[0]):
+    for jdx in range(ARGS.lmax):
         p0 = [1., 0., 1., 0.]
         coeff = [0., 0., 0., 0.]
         lags, corr = compute_cc(pfilt_list[jdx], refarr, maxlag=maxlag)
@@ -336,15 +274,47 @@ def get_freqlags_corrected(refarr, pfilt_list, pexcl_list, maxlag=20):
     return (corr_mat, corr_mat_gauss), (corr_matarg, corr_matarg_gauss), corrbg_list
 
 
+def compute_delnu(pschunks, pfilt_list, pexcl_list, dfreq, maxlag=20):
+    corr_mat = np.zeros((ARGS.lmax, pschunks.shape[0], 2*maxlag+1))
+    corr_mat_gauss = np.zeros((ARGS.lmax, pschunks.shape[0], 2*maxlag+1))
+    corr_matarg = np.zeros((ARGS.lmax, pschunks.shape[0]))
+    corr_matarg_gauss = np.zeros((ARGS.lmax, pschunks.shape[0]))
+
+    for idx in range(pschunks.shape[0]):
+        (_cm, _cmg), (_cma, _cmag), _cbg_list = get_freqlags_corrected(pschunks[idx], pfilt_list, pexcl_list, maxlag=maxlag)
+        corr_mat[:, idx, :] = _cm
+        corr_mat_gauss[:, idx, :] = _cmg
+        corr_matarg[:, idx] = _cma
+        corr_matarg_gauss[:, idx] = _cmag
+    domega_muhz = -corr_matarg_gauss*dfreq/muhz2hz
+    return domega_muhz
+
+
+
+def compute_errors_montecarlo(psfit ,pfilt_list, pexcl_list, dfreq, maxlag=20, samples=10000):
+    dom_list = []
+    for idx in tqdm(range(samples), desc='Computing errors using MonteCarlo'):
+        _psc = noisify(psfit)
+        _dom = compute_delnu(_psc[None, :], pfilt_list, pexcl_list, dfreq, maxlag=maxlag)
+        dom_list.append(_dom)
+    dom_list = np.squeeze(np.array(dom_list))
+    dom_list[np.isnan(dom_list)] = 0.
+    domega_sig = np.zeros(ARGS.lmax)
+    for idx in range(ARGS.lmax):
+        mask = abs(dom_list[:, idx])<5.
+        assert (~mask).sum()/mask.sum() < 0.01, "More than 1% outliers"
+        domega_sig[idx] = np.std(dom_list[mask, idx], axis=0)
+    return dom_list, domega_sig
+
+
 def moving_avg(x, w):
     return np.convolve(x, np.ones(w), 'valid')/w
 
 
 if __name__ == "__main__":
     kicstr = f"{ARGS.kic:09d}"
-    suffix = "longts"
     suffix = f"N{int(ARGS.Navg)}-s{int(ARGS.Nshift)}"
-    mode_dict, mode_cols = read_a2z(f'{scratch_dir}/peakbag/{suffix}/modes_param.a2z')
+    mode_dict, mode_cols = read_a2z(f'{scratch_dir}/peakbag-{suffix}/modes_param.a2z')
     obsdata = readh5(f'{scratch_dir}/kplr{kicstr}-{suffix}.h5')
 
     muhz2hz = 1e-6
@@ -384,7 +354,7 @@ if __name__ == "__main__":
     freq_arr = freq_arr[MASK_FREQ]
     freq_mhz = freq_mhz[MASK_FREQ]
 
-    numax = np.loadtxt(f'{scratch_dir}/peakbag/{suffix}/background_parameters.dat')[-3][0]*muhz2hz
+    numax = np.loadtxt(f'{scratch_dir}/peakbag-{suffix}/background_parameters.dat')[-3][0]*muhz2hz
     gfilter = gaussian_gfilt(freq_arr/mhz2hz, numax/mhz2hz, 1.5)
     print(f'LOADING SUCESS')
     psdict, fmhz, enn_list, ell_list, nu_list, gamma_list = get_pslbg(SPS, return_nl_list=True)
@@ -425,24 +395,17 @@ if __name__ == "__main__":
     fig.supxlabel('Frequency [mHz]')
     fig.supylabel('Power [ppm^2/muHz]')
 
+    maxlag = 26
     dfreq = freq_arr[1] - freq_arr[0]
-    maxlag = 28
-    p0 = [1., 0., 1., 0.]
-    print(f"max frequency lag = {maxlag*dfreq:.2f} muHz")
-    lags = np.arange(-maxlag, maxlag+1)
+    domega_muhz = compute_delnu(pschunks, pfilt_list, pexcl_list, dfreq, maxlag=maxlag)
+    domega_mc_list, domega_sig = compute_errors_montecarlo(psfit, pfilt_list, pexcl_list, dfreq, maxlag=maxlag)
 
-    corr_mat = np.zeros((4, pschunks.shape[0], 2*maxlag+1))
-    corr_mat_gauss = np.zeros((4, pschunks.shape[0], 2*maxlag+1))
-    corr_matarg = np.zeros((4, pschunks.shape[0]))
-    corr_matarg_gauss = np.zeros((4, pschunks.shape[0]))
-
-    for idx in tqdm(range(pschunks.shape[0]), desc="Time index=", leave=True):
-        lags_list, corr_list, corrnlist = [], [], []
-        (_cm, _cmg), (_cma, _cmag), _cbg_list = get_freqlags_corrected(pschunks[idx], pfilt_list, pexcl_list, maxlag=maxlag)
-        corr_mat[:, idx, :] = _cm
-        corr_mat_gauss[:, idx, :] = _cmg
-        corr_matarg[:, idx] = _cma
-        corr_matarg_gauss[:, idx] = _cmag
+    opdict = {}
+    opdict['domega_muhz'] = domega_muhz
+    opdict['domega_sig'] = domega_sig
+    opdict['domega_mc_list'] = domega_mc_list
+    opdict['time_arr'] = obsdata['tmid_list']
+    saveh5(f"{scratch_dir}/delnu-{kicstr}-{suffix}.h5", opdict)
 
     santos_data_avg = {}
     for key in santos_data.keys():
@@ -455,11 +418,13 @@ if __name__ == "__main__":
         finte = interp1d(santos_data_avg['time'], santos_data_avg[f'delnu{idx}_error'], bounds_error=False)
         pbobs = fint(time_arr)
         pbobse = finte(time_arr)
-        domega_muhz = -corr_matarg_gauss[idx]*dfreq/muhz2hz
-        axs[idx].plot(time_arr, domega_muhz, 'o-k')
+        
+        #axs[idx].plot(time_arr, domega_muhz[idx], 'o-k')
         axs[idx].set_title('$\\ell$ = ' + f'{idx}')
         axs[idx].errorbar(time_arr, pbobs, yerr=pbobse, capsize=5, color='r', marker='o', markersize=4, linestyle='') 
+        axs[idx].errorbar(time_arr, domega_muhz[idx], yerr=np.ones_like(domega_muhz[idx])*domega_sig[idx], capsize=5, color='k', marker='o', markersize=4, linestyle='') 
+        axs[idx].plot(time_arr, domega_muhz[idx], 'o-k')
     fig.supxlabel('Time [day]', fontsize=14)
     fig.supylabel('$\\delta\\omega_\\ell$ in $\\mu$Hz', fontsize=14)
     fig.tight_layout()
-    fig.savefig(f'{PAPDIR}/delnu-comparison-8006161.png')
+    fig.savefig(f'{PAPDIR}/delnu-comparison-{kicstr}.png')
