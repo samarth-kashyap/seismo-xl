@@ -1,23 +1,30 @@
 import sys
-import numpy as np
 import h5py
 import argparse
-import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
 from tqdm import tqdm
-from src.utils import read_a2z
-from src.utils import read_bgparams
+import matplotlib.pyplot as plt
+from scipy.interpolate import interp1d
 from scipy.optimize import curve_fit
 
 # Local imports
+from sgkutils import readh5
+from src.utils import read_a2z
 from src.globalvars import globalVars
 from src.stellarspec import stellarPS
 
 # Defining some global variables
 GVARS = globalVars()
+PAPDIR = "/scratch/seismo/kashyap/cloud/Yandex.Disk/papers-posters-docs/2025-seismo-xl"
+scratch_dir = f"/scratch/seismo/kashyap/processed/p11-seismo-xl"
+santos_data = pd.read_csv('data/8006161.csv')
 # mode data is written as enn, ell, freq, A, gamma
 
 #--------------------- ARGUMENT PARSER ---------------------------------
 parser = argparse.ArgumentParser(description='Process some integers.')
+parser.add_argument('--kic', type=int, default=8006161, help='Kepler KIC')
+parser.add_argument('--lmax', type=int, default=3, help='Max ell observed in data')
 parser.add_argument('--Navg', type=int, default=90 ,help='Length of sub-series (days)')
 parser.add_argument('--Nshift', type=int, default=15, help='Shift between sub-series (days)')
 parser.add_argument('--inclang', type=float, default=45., help='Inclination angle')
@@ -29,7 +36,6 @@ assert ARGS.freqmin>0. and ARGS.freqmax<10., "Min freq out of range"
 assert ARGS.freqmax>0. and ARGS.freqmax<10., "Max freq out of range"
 assert ARGS.freqmax>ARGS.freqmin, "maxfreq < minfreq; exiting"
 
-scratch_dir = f"/scratch/seismo/kashyap/processed/sun-intg"
 
 def get_freqlags(refarr, pfilt_list, maxlag=20):
     # print(f"max frequency lag = {maxlag*dfreq:.2f} muHz")
@@ -179,7 +185,7 @@ def get_pslbg(SPS, visibility_matrix=True, return_nl_list=True):
     gamma_list = []
     ps_nlm_dict = {}
     bgtype = 'apollinaire'
-    bgl.append(np.loadtxt(f'./results/{suffix}/background.dat'))
+    bgl.append(np.loadtxt(f'{scratch_dir}/peakbag/{suffix}/background.dat'))
     print(bgl[-1].shape)
     #kwargs = {'n_harvey': 2,
     #          'param': read_bgparams(f'./results/{suffix}/mcmc_background_mean.dat')}
@@ -297,105 +303,72 @@ def compute_cc(arr1, arr2, maxlag=20):
     return lags, cc
 
 
-def compute_delnu(pmod_list, pfilt_list, pexcl_list, corrected=False):
-    # Computing delnu with correction factor
-    collect0fitval = []
-    collect1fitval = []
-    collect2fitval = []
-    collect3fitval = []
-    for idx in tqdm(range(ARGS.realizations), desc='performing Montecarlo'):
-        if corrected:
-            __a0, __a00, cbg0 = get_freqlags_corrected(noisify(pmod_list[0]), pfilt_list, pexcl_list)
-            __a1, __a10, cbg1 = get_freqlags_corrected(noisify(pmod_list[1]), pfilt_list, pexcl_list)
-            __a2, __a20, cbg2 = get_freqlags_corrected(noisify(pmod_list[2]), pfilt_list, pexcl_list)
-            __a3, __a30, cbg3 = get_freqlags_corrected(noisify(pmod_list[3]), pfilt_list, pexcl_list)
-            collect0fitval.append(__a00[1][0])
-            collect1fitval.append(__a10[1][1])
-            collect2fitval.append(__a20[1][2])
-            collect3fitval.append(__a30[1][3])
-        else:
-            __a0, __a00 = get_freqlags(noisify(pmod_list[0]), pfilt_list)
-            __a1, __a10 = get_freqlags(noisify(pmod_list[1]), pfilt_list)
-            __a2, __a20 = get_freqlags(noisify(pmod_list[2]), pfilt_list)
-            __a3, __a30 = get_freqlags(noisify(pmod_list[3]), pfilt_list)
-            collect0fitval.append(__a00[1][0])
-            collect1fitval.append(__a10[1][1])
-            collect2fitval.append(__a20[1][2])
-            collect3fitval.append(__a30[1][3])
+def get_freqlags_corrected(refarr, pfilt_list, pexcl_list, maxlag=20):
+    # print(f"max frequency lag = {maxlag*dfreq:.2f} muHz")
+    
+    # corr_mat stores the correlation matrix [ell, time_chunk, lag]
+    # corr_mat_gauss stores the gaussian fit [ell, time_chunk, lag]
+    # corr_matarg stores the index corresponding to maximum corr [ell, time_chunk]
+    # corr_matarg_gauss max corr for the gaussian fit [ell, time_chunk]
+    
+    corr_mat = np.zeros((4, 2*maxlag+1))
+    corr_mat_gauss = np.zeros((4, 2*maxlag+1))
+    corr_matarg = np.zeros(4)
+    corr_matarg_gauss = np.zeros(4)
+    
+    corrbg_list = []
+    for jdx in range(pfilt_list.shape[0]):
+        p0 = [1., 0., 1., 0.]
+        coeff = [0., 0., 0., 0.]
+        lags, corr = compute_cc(pfilt_list[jdx], refarr, maxlag=maxlag)
+        lags_bg, corr_bg = compute_cc(pexcl_list[jdx], pfilt_list[jdx], maxlag=maxlag)
+        corr = corr - corr_bg
+        try:
+            coeff, var_matrix = curve_fit(gaussian, lags, corr, p0=p0)
+        except RuntimeError:
+            coeff[1] = np.nan
+        corr_mat_gauss[jdx, :] = gaussian(lags, *coeff)
+        corr_mat[jdx, :] = corr
+        max_idx = np.argmax(corr)
+        corr_matarg[jdx] = lags[max_idx]
+        corr_matarg_gauss[jdx] = coeff[1]
+        corrbg_list.append(corr_bg)
+    return (corr_mat, corr_mat_gauss), (corr_matarg, corr_matarg_gauss), corrbg_list
 
-    collect0fitval = np.array(collect0fitval)
-    collect1fitval = np.array(collect1fitval)
-    collect2fitval = np.array(collect2fitval)
-    collect3fitval = np.array(collect3fitval)
-    return collect0fitval, collect1fitval, collect2fitval, collect3fitval
 
-
-
-def testfunc():
-    collect0fitval = []
-    collect1fitval = []
-    collect2fitval = []
-    collect3fitval = []
-    for idx in tqdm(range(ARGS.realizations), desc='performing Montecarlo'):
-        __a0, __a00 = get_freqlags(noisify(pmod0s), pfilt_list)
-        __a1, __a10 = get_freqlags(noisify(pmod1s), pfilt_list)
-        __a2, __a20 = get_freqlags(noisify(pmod2s), pfilt_list)
-        __a3, __a30 = get_freqlags(noisify(pmod3s), pfilt_list)
-        collect0fitval.append(__a00[1][0])
-        collect1fitval.append(__a10[1][1])
-        collect2fitval.append(__a20[1][2])
-        collect3fitval.append(__a30[1][3])
-
-    collect0fitval = np.array(collect0fitval)
-    collect1fitval = np.array(collect1fitval)
-    collect2fitval = np.array(collect2fitval)
-    collect3fitval = np.array(collect3fitval)
-
-    fig, axs = plt.subplots(nrows=1, ncols=1, figsize=(4, 3))
-    axs.hist((collect0fitval + shiftval)*dfreq,
-             histtype=u'step', label='ell=0', bins=np.linspace(-2, 2, 100))
-    axs.hist((collect1fitval + shiftval)*dfreq,
-             histtype=u'step', label='ell=1', bins=np.linspace(-2, 2, 100))
-    axs.hist((collect2fitval + shiftval)*dfreq,
-             histtype=u'step', label='ell=2', bins=np.linspace(-2, 2, 100))
-    axs.hist((collect3fitval + shiftval)*dfreq,
-             histtype=u'step', label='ell=3', bins=np.linspace(-2, 2, 100))
-    fig.supxlabel('$\\delta\\nu^\\mathrm{pred} - \\delta\\nu^\\mathrm{true}$ in $\\mu$Hz',
-                  fontsize=12)
-    axs.legend()
-    fig.tight_layout()
-    return collect0fitval, collect1fitval, collect2fitval, collect3fitval, fig, axs
-
+def moving_avg(x, w):
+    return np.convolve(x, np.ones(w), 'valid')/w
 
 
 if __name__ == "__main__":
+    kicstr = f"{ARGS.kic:09d}"
     suffix = "longts"
     suffix = f"N{int(ARGS.Navg)}-s{int(ARGS.Nshift)}"
-    mode_dict, mode_cols = read_a2z(f'/data/seismo/kashyap/codes/p11-seismo-xl/results/{suffix}/modes_param.a2z')
+    mode_dict, mode_cols = read_a2z(f'{scratch_dir}/peakbag/{suffix}/modes_param.a2z')
+    obsdata = readh5(f'{scratch_dir}/kplr{kicstr}-{suffix}.h5')
+
+    muhz2hz = 1e-6
+    nhz2hz = 1e-9
+    mhz2hz = 1e-3
+    day2sec = 24*3600.
 
     enn = mode_dict[:, 0].astype('int')
     ell = mode_dict[:, 1].astype('int')
-    nus  = mode_dict[:, 2]*1e-6
+    nus  = mode_dict[:, 2]*muhz2hz
     amps = mode_dict[:, 3]
-    fwhm  = mode_dict[:, 4]*1e-6
+    fwhm  = mode_dict[:, 4]*muhz2hz
 
-    day2sec = 24*3600.
     rot_period = 31.71*day2sec # days (A&A 682, A67, 2024 - Breton, Lanza, Messina)
     a1rot = 1/rot_period
-    pschunks = np.load(f'data/pschunks-8006161-{suffix}.npy')*1e-9
-
-
-    # ?? Temporary fix; this is not needed in the next version
-    if suffix=='longts':
-        pschunks *= 1e-9
-    fref = np.load(f'data/freq-8006161-{suffix}.npy')
-    cond  = (fref*1e6>150.)*(fref*1e6<6000.)
+    pschunks = obsdata['pschunks']*nhz2hz
+    fref = obsdata['freq']
+    cond = obsdata['fmask']
     fref = fref[cond]
     pschunks = pschunks[:, cond]
     pref = pschunks.mean(axis=0)
 
     SPS = stellarPS(fref, 
-                    lmax=3,
+                    lmax=ARGS.lmax,
                     mode_ell=ell*1,
                     mode_enn=enn*1,
                     mode_nu=nus*1.,
@@ -411,7 +384,8 @@ if __name__ == "__main__":
     freq_arr = freq_arr[MASK_FREQ]
     freq_mhz = freq_mhz[MASK_FREQ]
 
-    gfilter = gaussian_gfilt(freq_arr*1e3, 3.616, 1.5)
+    numax = np.loadtxt(f'{scratch_dir}/peakbag/{suffix}/background_parameters.dat')[-3][0]*muhz2hz
+    gfilter = gaussian_gfilt(freq_arr/mhz2hz, numax/mhz2hz, 1.5)
     print(f'LOADING SUCESS')
     psdict, fmhz, enn_list, ell_list, nu_list, gamma_list = get_pslbg(SPS, return_nl_list=True)
     psl_bg, ps_nlm_dict = psdict
@@ -420,128 +394,72 @@ if __name__ == "__main__":
 
     psfit = (amps @ psl_bg[:-1] + psl_bg[-1])*gfilter
     pref_arr = pref[MASK_FREQ]*gfilter
-
+    bgfit = psl_bg[-1]*1.
+    print(f"----Number of frequency bins = {len(freq_arr)}")
     assert np.prod(ell_list==ell), "Loaded amplitudes for ell dont match the current ell_list"
     assert np.prod(enn_list==enn), "Loaded amplitudes for enn dont match the current enn_list"
 
-    mask0 = np.array(ell_list)==0
-    mask1 = np.array(ell_list)==1
-    mask2 = np.array(ell_list)==2
-    mask3 = np.array(ell_list)==3
+    maskell_list = []
+    pfilt_list = []
+    pexcl_list = []
+    for idx in range(ARGS.lmax):
+        _mask = np.array(ell_list)==idx
+        maskell_list.append(_mask)
+        pfilt_list.append(np.squeeze((amps[_mask] @ psl_bg[:-1][_mask, :] + bgfit)*gfilter))
+        pexcl_list.append(np.squeeze((psfit - amps[_mask] @ psl_bg[:-1][_mask, :] - bgfit)*gfilter))
 
-    fig, axs = plt.subplots(nrows=2, ncols=1)
-    axs[0].plot(freq_mhz, pschunks[0]/gfilter, 'k', label='Observed')
-    axs[0].plot(freq_mhz, psfit/gfilter, 'r', label='Model')
+    pfilt_list = np.array(pfilt_list)
+    pexcl_list = np.array(pexcl_list)
+
+    fig, axs = plt.subplots(nrows=2, ncols=1, sharex=True)
+    axs[0].plot(freq_mhz, pschunks[0]*1e9, 'k', label='Observed')
+    axs[0].plot(freq_mhz, psfit*1e9, 'r', label='Model')
     axs[0].legend()
     axs[0].set_title('Power spectrum')
     axs[1].plot(freq_mhz, pschunks.mean(axis=0)/psfit, 'k')
-    axs[1].set_title('$P^\\mathrm{model}/P^\\mathrm{observed}$')
+    axs[1].set_title('$P^\\mathrm{observed}/P^\\mathrm{model}$')
     for _axs in axs:
-        _axs.set_xscale('log')
-        _axs.set_yscale('log')
+        _axs.set_xscale('linear')
+        _axs.set_yscale('linear')
     axs[1].set_xticks(np.arange(1, 5))
     fig.supxlabel('Frequency [mHz]')
     fig.supylabel('Power [ppm^2/muHz]')
 
-    bgfit = psl_bg[-1]*1.
-    print(f"----Number of frequency bins = {len(freq_arr)}")
+    dfreq = freq_arr[1] - freq_arr[0]
+    maxlag = 28
+    p0 = [1., 0., 1., 0.]
+    print(f"max frequency lag = {maxlag*dfreq:.2f} muHz")
+    lags = np.arange(-maxlag, maxlag+1)
 
-    # Computing the MI filters
-    pfilt0 = np.squeeze((amps[mask0] @ psl_bg[:-1][mask0, :] + bgfit)*gfilter)
-    pfilt1 = np.squeeze((amps[mask1] @ psl_bg[:-1][mask1, :] + bgfit)*gfilter)
-    pfilt2 = np.squeeze((amps[mask2] @ psl_bg[:-1][mask2, :] + bgfit)*gfilter)
-    pfilt3 = np.squeeze((amps[mask3] @ psl_bg[:-1][mask3, :] + bgfit)*gfilter)
-    pfilt_list = [pfilt0, pfilt1, pfilt2, pfilt3]
-    pfilt_list = np.array(pfilt_list)
+    corr_mat = np.zeros((4, pschunks.shape[0], 2*maxlag+1))
+    corr_mat_gauss = np.zeros((4, pschunks.shape[0], 2*maxlag+1))
+    corr_matarg = np.zeros((4, pschunks.shape[0]))
+    corr_matarg_gauss = np.zeros((4, pschunks.shape[0]))
 
-    # Computing the LC term
-    pexc0 = np.squeeze((psfit - amps[mask0] @ psl_bg[:-1][mask0, :] - bgfit)*gfilter)
-    pexc1 = np.squeeze((psfit - amps[mask1] @ psl_bg[:-1][mask1, :] - bgfit)*gfilter)
-    pexc2 = np.squeeze((psfit - amps[mask2] @ psl_bg[:-1][mask2, :] - bgfit)*gfilter)
-    pexc3 = np.squeeze((psfit - amps[mask3] @ psl_bg[:-1][mask3, :] - bgfit)*gfilter)
-    pexcl_list = [pexc0, pexc1, pexc2, pexc3]
-    pexcl_list = np.array(pexcl_list)
-    sys.exit()
+    for idx in tqdm(range(pschunks.shape[0]), desc="Time index=", leave=True):
+        lags_list, corr_list, corrnlist = [], [], []
+        (_cm, _cmg), (_cma, _cmag), _cbg_list = get_freqlags_corrected(pschunks[idx], pfilt_list, pexcl_list, maxlag=maxlag)
+        corr_mat[:, idx, :] = _cm
+        corr_mat_gauss[:, idx, :] = _cmg
+        corr_matarg[:, idx] = _cma
+        corr_matarg_gauss[:, idx] = _cmag
 
-    coll0123 = compute_delnu(pmods_list, pfilt_list, pexcl_list, corrected=False)
-    coll0123_corr = compute_delnu(pmods_list, pfilt_list, pexcl_list, corrected=True)
+    santos_data_avg = {}
+    for key in santos_data.keys():
+        santos_data_avg[key] = moving_avg(santos_data[key], int(ARGS.Navg//90))
 
-    collect0fitval = coll0123[0]
-    collect1fitval = coll0123[1]
-    collect2fitval = coll0123[2]
-    collect3fitval = coll0123[3]
-    collect0fitval_corr = coll0123_corr[0]
-    collect1fitval_corr = coll0123_corr[1]
-    collect2fitval_corr = coll0123_corr[2]
-    collect3fitval_corr = coll0123_corr[3]
-
-    collect_fitval = []
-    for idx in tqdm(range(ARGS.realizations), desc='MonteCarlo combined'):
-        __a0, __a00 = get_freqlags(noisify(pfilt0123s), np.array([psfit*gfilter,]))
-        collect_fitval.append(__a00[1][0])
-    collect_fitval = np.array(collect_fitval)
-    print(f"===============================================================")
-    print(f" freqmin = {ARGS.freqmin:.2f}; freqmax = {ARGS.freqmax:.2f}")
-    print(f"===============================================================")
-
-    fig, axs = plt.subplots(nrows=1, ncols=2, figsize=(8, 3))
-    axs[0].hist((collect0fitval + shiftval)*dfreq, histtype=u'step', label='ell=0', bins=np.linspace(-2, 2, 100), density=True)
-    axs[0].hist((collect1fitval + shiftval)*dfreq, histtype=u'step', label='ell=1', bins=np.linspace(-2, 2, 100), density=True)
-    axs[0].hist((collect2fitval + shiftval)*dfreq, histtype=u'step', label='ell=2', bins=np.linspace(-2, 2, 100), density=True)
-    axs[0].hist((collect3fitval + shiftval)*dfreq, histtype=u'step', label='ell=3', bins=np.linspace(-2, 2, 100), density=True)
-    axs[0].set_title('Before pexcl correction')
-
-    axs[1].hist((collect0fitval_corr + shiftval)*dfreq, histtype=u'step',
-                label='ell=0', bins=np.linspace(-2, 2, 100), density=True)
-    axs[1].hist((collect1fitval_corr + shiftval)*dfreq, histtype=u'step',
-                label='ell=1', bins=np.linspace(-2, 2, 100), density=True)
-    axs[1].hist((collect2fitval_corr + shiftval)*dfreq, histtype=u'step',
-                label='ell=2', bins=np.linspace(-2, 2, 100), density=True)
-    axs[1].hist((collect3fitval_corr + shiftval)*dfreq, histtype=u'step',
-                label='ell=3', bins=np.linspace(-2, 2, 100), density=True)
-    axs[1].set_title('After pexcl correction')
-    fig.supxlabel('$\\delta\\nu^\\mathrm{pred} - \\delta\\nu^\\mathrm{true}$ in $\\mu$Hz', fontsize=12)
-    for _axs in axs: _axs.legend()
+    time_arr = obsdata['tmid_list']
+    fig, axs = plt.subplots(nrows=1, ncols=3, figsize=(10, 3), sharex=True, sharey=True)
+    for idx in range(ARGS.lmax):
+        fint = interp1d(santos_data_avg['time'], santos_data_avg[f'delnu{idx}'], bounds_error=False,)
+        finte = interp1d(santos_data_avg['time'], santos_data_avg[f'delnu{idx}_error'], bounds_error=False)
+        pbobs = fint(time_arr)
+        pbobse = finte(time_arr)
+        domega_muhz = -corr_matarg_gauss[idx]*dfreq/muhz2hz
+        axs[idx].plot(time_arr, domega_muhz, 'o-k')
+        axs[idx].set_title('$\\ell$ = ' + f'{idx}')
+        axs[idx].errorbar(time_arr, pbobs, yerr=pbobse, capsize=5, color='r', marker='o', markersize=4, linestyle='') 
+    fig.supxlabel('Time [day]', fontsize=14)
+    fig.supylabel('$\\delta\\omega_\\ell$ in $\\mu$Hz', fontsize=14)
     fig.tight_layout()
-
-    sys.exit()
-    
-    # Computing delnu with correction factor
-    collect0fitval_corr = []
-    collect1fitval_corr = []
-    collect2fitval_corr = []
-    collect3fitval_corr = []
-    for idx in tqdm(range(ARGS.realizations), desc='performing Montecarlo'):
-        __a0, __a00, cbg0 = get_freqlags_corrected(noisify(pmod0s), pfilt_list, pexcl_list)
-        __a1, __a10, cbg1 = get_freqlags_corrected(noisify(pmod1s), pfilt_list, pexcl_list)
-        __a2, __a20, cbg2 = get_freqlags_corrected(noisify(pmod2s), pfilt_list, pexcl_list)
-        __a3, __a30, cbg3 = get_freqlags_corrected(noisify(pmod3s), pfilt_list, pexcl_list)
-        collect0fitval_corr.append(__a00[1][0])
-        collect1fitval_corr.append(__a10[1][1])
-        collect2fitval_corr.append(__a20[1][2])
-        collect3fitval_corr.append(__a30[1][3])
-
-    collect0fitval_corr = np.array(collect0fitval_corr)
-    collect1fitval_corr = np.array(collect1fitval_corr)
-    collect2fitval_corr = np.array(collect2fitval_corr)
-    collect3fitval_corr = np.array(collect3fitval_corr)
-
-    # Computing delnu without correction factor
-    collect0fitval = []
-    collect1fitval = []
-    collect2fitval = []
-    collect3fitval = []
-    for idx in tqdm(range(ARGS.realizations), desc='performing Montecarlo'):
-        __a0, __a00 = get_freqlags(noisify(pmod0s), pfilt_list)
-        __a1, __a10 = get_freqlags(noisify(pmod1s), pfilt_list)
-        __a2, __a20 = get_freqlags(noisify(pmod2s), pfilt_list)
-        __a3, __a30 = get_freqlags(noisify(pmod3s), pfilt_list)
-        collect0fitval.append(__a00[1][0])
-        collect1fitval.append(__a10[1][1])
-        collect2fitval.append(__a20[1][2])
-        collect3fitval.append(__a30[1][3])
-
-    collect0fitval = np.array(collect0fitval)
-    collect1fitval = np.array(collect1fitval)
-    collect2fitval = np.array(collect2fitval)
-    collect3fitval = np.array(collect3fitval)
+    fig.savefig(f'{PAPDIR}/delnu-comparison-8006161.png')
