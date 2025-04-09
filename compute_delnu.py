@@ -4,35 +4,12 @@ import pandas as pd
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
-from scipy.optimize import curve_fit
+from scipy.optimize import curve_fit, minimize
 
 # Local imports
 from sgkutils import readh5, saveh5
 from src.utils import read_a2z
 from src.stellarspec import stellarPS
-
-#--------------------- ARGUMENT PARSER ---------------------------------
-parser = argparse.ArgumentParser(description='Process some integers.')
-parser.add_argument('--kic', type=int, default=8006161, help='Kepler KIC')
-parser.add_argument('--lmax', type=int, default=3, help='Max ell observed in data')
-parser.add_argument('--Navg', type=int, default=90 ,help='Length of sub-series (days)')
-parser.add_argument('--Nshift', type=int, default=15, help='Shift between sub-series (days)')
-parser.add_argument('--inclang', type=float, default=45., help='Inclination angle')
-parser.add_argument('--freqmin', type=float, default=0.5, help='Minimum freq in mHz')
-parser.add_argument('--freqmax', type=float, default=5.5, help='Maximum freq in mHz')
-ARGS = parser.parse_args()
-#----------------------------------------------------------------------------
-assert ARGS.freqmin>0. and ARGS.freqmax<10., "Min freq out of range"
-assert ARGS.freqmax>0. and ARGS.freqmax<10., "Max freq out of range"
-assert ARGS.freqmax>ARGS.freqmin, "maxfreq < minfreq; exiting"
-
-kicstr = f"{ARGS.kic:09d}"
-PAPDIR = "/scratch/seismo/kashyap/cloud/Yandex.Disk/papers-posters-docs/2025-seismo-xl"
-scratch_dir = f"/scratch/seismo/kashyap/processed/p11-seismo-xl/{kicstr}"
-try:
-    santos_data = pd.read_csv(f'./data/santos2018-{kicstr}.csv')
-except FileNotFoundError:
-    pass
 
 
 def get_freqlags(refarr, pfilt_list, maxlag=20):
@@ -126,7 +103,6 @@ def get_pslbg(SPS, visibility_matrix=True, return_nl_list=True):
     nu_list = []
     gamma_list = []
     ps_nlm_dict = {}
-    bgtype = 'apollinaire'
     bgl.append(np.loadtxt(f'{scratch_dir}/peakbag-{suffix}/background.dat'))
     print(bgl[-1].shape)
 
@@ -142,8 +118,7 @@ def get_pslbg(SPS, visibility_matrix=True, return_nl_list=True):
         gamma_list = [*gamma_list, *gammas]
 
         for _enn in enns:
-            _psnlm = SPS.construct_ps_normed_nlm(enn=_enn, ell=_ell, shiftfreq=0.,
-                                                 scalefwhm=1., stahn=True)
+            _psnlm = SPS.construct_ps_normed_nlm(enn=_enn, ell=_ell, shiftfreq=0., scalefwhm=1.,)
             ps_nlm_dict[f"{_ell:d}-{_enn:02d}"] = _psnlm
             
 
@@ -151,7 +126,6 @@ def get_pslbg(SPS, visibility_matrix=True, return_nl_list=True):
     print(psl_bg[0].shape)
     psl_nlm = [*psl_nlm, *bgl]
     ps_nlm_dict["bg1"] = bgl[0]
-    #ps_nlm_dict["bg2"] = bgl[1]
     psl_bg = np.array(psl_bg)
     if return_nl_list:
         return (psl_bg, ps_nlm_dict), fmhz, enn_list, ell_list, nu_list, gamma_list
@@ -201,6 +175,7 @@ def gaussian(x, *p):
     """
     A, mu, sigma, k = p
     return A*np.exp(-(x-mu)**2/(2.*sigma**2)) + k
+
 
 
 def compute_cc(arr1, arr2, maxlag=20):
@@ -274,14 +249,47 @@ def get_freqlags_corrected(refarr, pfilt_list, pexcl_list, maxlag=20):
     return (corr_mat, corr_mat_gauss), (corr_matarg, corr_matarg_gauss), corrbg_list
 
 
-def compute_delnu(pschunks, pfilt_list, pexcl_list, dfreq, maxlag=20):
+
+def get_freqlags_polyfit(refarr, pfilt_list, pexcl_list, maxlag=20):    
+    corr_mat = np.zeros((ARGS.lmax, 2*maxlag+1))
+    corr_mat_pf = np.zeros((ARGS.lmax, 2*maxlag+1))
+    corr_matarg = np.zeros(ARGS.lmax)
+    corr_matarg_pf = np.zeros(ARGS.lmax)
+    
+    corrbg_list = []
+    for jdx in range(ARGS.lmax):
+        coeff = [0., 0., 0., 0.]
+        lags, corr = compute_cc(pfilt_list[jdx], refarr, maxlag=maxlag)
+        lags_bg, corr_bg = compute_cc(pexcl_list[jdx], pfilt_list[jdx], maxlag=maxlag)
+        corr = corr + corr_bg
+        try:
+            _corr = corr - corr.min()
+            _corr = _corr/_corr.max()
+            pf = np.polyfit(lags, _corr, deg=5)
+            mfunc = lambda x: -1*np.polyval(pf, x)
+            fit = minimize(mfunc, x0=0)
+        except RuntimeError:
+            coeff[1] = np.nan
+        corr_mat[jdx, :] = _corr
+        corr_mat_pf[jdx, :] = -1*mfunc(lags)
+        max_idx = np.argmax(corr)
+        corr_matarg[jdx] = lags[max_idx]
+        corr_matarg_pf[jdx] = fit.x[0]
+        corrbg_list.append(corr_bg)
+    return (corr_mat, corr_mat_pf), (corr_matarg, corr_matarg_pf), corrbg_list
+
+
+def compute_delnu(pschunks, pfilt_list, pexcl_list, dfreq, maxlag=20, fittype='gaussian'):
     corr_mat = np.zeros((ARGS.lmax, pschunks.shape[0], 2*maxlag+1))
     corr_mat_gauss = np.zeros((ARGS.lmax, pschunks.shape[0], 2*maxlag+1))
     corr_matarg = np.zeros((ARGS.lmax, pschunks.shape[0]))
     corr_matarg_gauss = np.zeros((ARGS.lmax, pschunks.shape[0]))
 
     for idx in range(pschunks.shape[0]):
-        (_cm, _cmg), (_cma, _cmag), _cbg_list = get_freqlags_corrected(pschunks[idx], pfilt_list, pexcl_list, maxlag=maxlag)
+        if fittype=='gaussian':
+            (_cm, _cmg), (_cma, _cmag), _cbg_list = get_freqlags_corrected(pschunks[idx], pfilt_list, pexcl_list, maxlag=maxlag)
+        elif fittype=='polynomial':
+            (_cm, _cmg), (_cma, _cmag), _cbg_list = get_freqlags_polyfit(pschunks[idx], pfilt_list, pexcl_list, maxlag=maxlag)
         corr_mat[:, idx, :] = _cm
         corr_mat_gauss[:, idx, :] = _cmg
         corr_matarg[:, idx] = _cma
@@ -302,7 +310,8 @@ def compute_errors_montecarlo(psfit ,pfilt_list, pexcl_list, dfreq, maxlag=20, s
     domega_sig = np.zeros(ARGS.lmax)
     for idx in range(ARGS.lmax):
         mask = abs(dom_list[:, idx])<5.
-        assert (~mask).sum()/mask.sum() < 0.01, "More than 1% outliers"
+        outlier_frac = (~mask).sum()/mask.sum()
+        if outlier_frac > 0.01: print(f"More than 1% outliers: {outlier_frac:.2f}")
         domega_sig[idx] = np.std(dom_list[mask, idx], axis=0)
     return dom_list, domega_sig
 
@@ -311,7 +320,130 @@ def moving_avg(x, w):
     return np.convolve(x, np.ones(w), 'valid')/w
 
 
+
+def plot_compare(dom_santos, derr_santos, dom, derr):
+    def get_dcs(arr1, arr2):
+        _arr1, _arr2 = arr1*1., arr2*1.
+        masknan = np.isnan(arr1) + np.isnan(arr2)
+        _arr1[masknan] = 0.
+        _arr2[masknan] = 0.
+        darr = _arr1 - _arr2
+        return np.sqrt(np.diag(darr @ darr.T))/darr.shape[-1]
+
+    dcs = get_dcs(np.array(dom_santos), dom)
+        
+    fig, axs = plt.subplots(nrows=1, ncols=3, figsize=(10, 3), sharex=True, sharey=True)
+    for idx in range(ARGS.lmax):
+        axs[idx].set_title('$\\ell$ = ' + f'{idx}')
+        axs[idx].errorbar(time_arr, dom_santos[idx]+dcs[idx], yerr=derr_santos[idx], 
+                          capsize=5, color='r', marker='o', markersize=4, alpha=0.8, linestyle='', 
+                          label='Santos et. al. (2018)') 
+        axs[idx].errorbar(time_arr, dom[idx], yerr=np.ones_like(dom[idx])*derr[idx], 
+                          capsize=5, color='k', marker='x', markersize=4, alpha=0.8, linestyle='', label='This work') 
+        #axs[idx].plot(time_arr, dom[idx], 'o-k', alpha=0.4)
+        axs[idx].legend()
+    fig.supxlabel('Time [day]', fontsize=14)
+    fig.supylabel('$\\delta\\omega_\\ell$ in $\\mu$Hz', fontsize=14)
+    fig.tight_layout()
+    return fig, axs
+
+
+def plot_cc(psc, psf, pse, tarr, numfitpix=10, fittype='gaussian', dfreq=1.e-6):
+    t0 = tarr[0]
+    dt = tarr[1]-tarr[0]
+    fig, axs = plt.subplots(nrows=1, ncols=3, figsize=(4, 4), sharey=True)
+    for jdx in range(3):
+        for idx in range(len(psc)):
+            shifty = dt*idx
+            lags, corr = compute_cc(psf[jdx], psc[idx])
+            lags_bg, corr_bg = compute_cc(pse[jdx], psf[jdx])
+            corr2 = corr - corr_bg
+            corr2 -= corr2.min()
+            corr2 /= corr2.max()
+            corr2 *= t0
+            maxidx = np.argmax(corr2)
+            pslice = slice(max(0, maxidx-numfitpix), min(len(lags), maxidx+numfitpix))
+            assert len(lags[pslice])>0, f"zero size, maxidx = {maxidx}, lags len = {len(lags)}"
+            axs[jdx].plot(lags[pslice]*dfreq*1e6, corr2[pslice]+shifty, '+k', alpha=0.5)
+            if fittype=='polynomial':
+                pf = np.polyfit(lags[pslice], corr2[pslice], deg=5)
+                mfunc = lambda x: -1*np.polyval(pf, x)
+                axs[jdx].plot(lags[pslice]*dfreq*1e6, -1*mfunc(lags[pslice])+shifty, 'r', alpha=0.5)
+            elif fittype=='gaussian':
+                p0 = [1., 0., 1., 0.]
+                coeff, var_matrix = curve_fit(gaussian, lags[pslice], corr2[pslice], p0=p0)
+                axs[jdx].plot(lags[pslice]*dfreq*1e6, gaussian(lags[pslice], *coeff)+shifty, 'r')
+            #axs[jdx].text((lags[0]-25)*dfreq*1e6, shifty, f't ={tarr[idx]:7.1f}d')
+        axs[jdx].set_title('$\\ell =$' + f'{jdx}')
+        #axs[jdx].set_xlim([(lags[0]-26)*dfreq*1e6, lags[-1]*dfreq*1e6])
+    fig.supxlabel('Frequency lag [$\\mu$Hz]')
+    fig.tight_layout()
+    return fig, axs
+
+
+def plot2cc(psc, psf, pse, tarr, numfitpix=10, fittype='gaussian', dfreq=1.e-6):
+    t0 = tarr[0]
+    dt = tarr[1]-tarr[0]
+    fig, axs = plt.subplots(nrows=1, ncols=3, figsize=(10, 2.5), sharey=True)
+    for jdx in range(3):
+        for idx in range(len(psc)):
+            shifty = dt*idx
+            lags, corr = compute_cc(psf[jdx], psc[idx])
+            lags_bg, corr_bg = compute_cc(pse[jdx], psf[jdx])
+            corr2 = corr - corr_bg
+            corr2 -= corr2.min()
+            corr2 /= corr2.max()
+            corr2 *= t0
+            maxidx = np.argmax(corr2)
+            pslice = slice(max(0, maxidx-numfitpix), min(len(lags), maxidx+numfitpix))
+            assert len(lags[pslice])>0, f"zero size, maxidx = {maxidx}, lags len = {len(lags)}"
+            axs[jdx].plot(corr2[pslice]+shifty, -lags[pslice]*dfreq*1e6, '+k', alpha=0.3)
+            if fittype=='polynomial':
+                pf = np.polyfit(lags[pslice], corr2[pslice], deg=5)
+                mfunc = lambda x: -1*np.polyval(pf, x)
+                axs[jdx].plot(-1*mfunc(lags[pslice])+shifty, -lags[pslice]*dfreq*1e6, 'r', alpha=0.5)
+                fit = minimize(mfunc, x0=0)
+                peakval = fit.x*dfreq*1e6
+            elif fittype=='gaussian':
+                p0 = [1., 0., 1., 0.]
+                coeff, var_matrix = curve_fit(gaussian, lags[pslice], corr2[pslice], p0=p0)
+                mfunc = lambda x: gaussian(x, *coeff)
+                axs[jdx].plot(gaussian(lags[pslice], *coeff)+shifty, -lags[pslice]*dfreq*1e6, 'r')
+                fit = minimize(mfunc, x0=0)
+                peakval = fit.x*dfreq*1e6
+            axs[jdx].plot(tarr[idx], -peakval, 'xk', markersize=5,)
+        axs[jdx].set_title('$\\ell =$' + f'{jdx}')
+        axs[jdx].set_xticks(np.arange(400, 1300, 200))
+    fig.supylabel('Frequency lag [$\\mu$Hz]')
+    fig.supxlabel('Time [day]')
+    fig.tight_layout()
+    return fig, axs
+
+
 if __name__ == "__main__":
+    #--------------------- ARGUMENT PARSER ---------------------------------
+    parser = argparse.ArgumentParser(description='Process some integers.')
+    parser.add_argument('--kic', type=int, default=8006161, help='Kepler KIC')
+    parser.add_argument('--lmax', type=int, default=3, help='Max ell observed in data')
+    parser.add_argument('--Navg', type=int, default=90 ,help='Length of sub-series (days)')
+    parser.add_argument('--Nshift', type=int, default=15, help='Shift between sub-series (days)')
+    parser.add_argument('--inclang', type=float, default=45., help='Inclination angle')
+    parser.add_argument('--freqmin', type=float, default=0.5, help='Minimum freq in mHz')
+    parser.add_argument('--freqmax', type=float, default=5.5, help='Maximum freq in mHz')
+    ARGS = parser.parse_args()
+    #----------------------------------------------------------------------------
+    assert ARGS.freqmin>0. and ARGS.freqmax<10., "Min freq out of range"
+    assert ARGS.freqmax>0. and ARGS.freqmax<10., "Max freq out of range"
+    assert ARGS.freqmax>ARGS.freqmin, "maxfreq < minfreq; exiting"
+
+    kicstr = f"{ARGS.kic:09d}"
+    PAPDIR = "/scratch/seismo/kashyap/cloud/Yandex.Disk/papers-posters-docs/2025-seismo-xl"
+    scratch_dir = f"/scratch/seismo/kashyap/processed/p11-seismo-xl/{kicstr}"
+    try:
+        santos_data = pd.read_csv(f'./data/santos2018b-{kicstr}.csv')
+    except FileNotFoundError:
+        pass
+
     kicstr = f"{ARGS.kic:09d}"
     suffix = f"N{int(ARGS.Navg)}-s{int(ARGS.Nshift)}"
     mode_dict, mode_cols = read_a2z(f'{scratch_dir}/peakbag-{suffix}/modes_param.a2z')
@@ -395,36 +527,44 @@ if __name__ == "__main__":
     fig.supxlabel('Frequency [mHz]')
     fig.supylabel('Power [ppm^2/muHz]')
 
-    maxlag = 26
+    maxlag = 34
     dfreq = freq_arr[1] - freq_arr[0]
-    domega_muhz = compute_delnu(pschunks, pfilt_list, pexcl_list, dfreq, maxlag=maxlag)
-    domega_mc_list, domega_sig = compute_errors_montecarlo(psfit, pfilt_list, pexcl_list, dfreq, maxlag=maxlag)
+
+    domega1muhz = compute_delnu(pschunks, pfilt_list, pexcl_list, dfreq, maxlag=maxlag, fittype='gaussian')
+    domega2muhz = compute_delnu(pschunks, pfilt_list, pexcl_list, dfreq, maxlag=maxlag, fittype='polynomial')
+    domega_mc_list, domega_sig = compute_errors_montecarlo(psfit, pfilt_list, pexcl_list, dfreq, maxlag=maxlag, samples=1000)
 
     opdict = {}
-    opdict['domega_muhz'] = domega_muhz
+    opdict['domega_muhz_gaussian'] = domega1muhz
+    opdict['domega_muhz_polynomial'] = domega2muhz
     opdict['domega_sig'] = domega_sig
     opdict['domega_mc_list'] = domega_mc_list
     opdict['time_arr'] = obsdata['tmid_list']
+    opdict['inclination'] = ARGS.inclang
     saveh5(f"{scratch_dir}/delnu-{kicstr}-{suffix}.h5", opdict)
 
     santos_data_avg = {}
     for key in santos_data.keys():
-        santos_data_avg[key] = moving_avg(santos_data[key], int(ARGS.Navg//90))
+        santos_data_avg[key] = moving_avg(santos_data[key], max(1, int(ARGS.Navg//90)))
 
     time_arr = obsdata['tmid_list']
-    fig, axs = plt.subplots(nrows=1, ncols=3, figsize=(10, 3), sharex=True, sharey=True)
+    domega_muhz_santos = []
+    domega_err_santos = []
     for idx in range(ARGS.lmax):
         fint = interp1d(santos_data_avg['time'], santos_data_avg[f'delnu{idx}'], bounds_error=False,)
         finte = interp1d(santos_data_avg['time'], santos_data_avg[f'delnu{idx}_error'], bounds_error=False)
         pbobs = fint(time_arr)
         pbobse = finte(time_arr)
-        
-        #axs[idx].plot(time_arr, domega_muhz[idx], 'o-k')
-        axs[idx].set_title('$\\ell$ = ' + f'{idx}')
-        axs[idx].errorbar(time_arr, pbobs, yerr=pbobse, capsize=5, color='r', marker='o', markersize=4, linestyle='') 
-        axs[idx].errorbar(time_arr, domega_muhz[idx], yerr=np.ones_like(domega_muhz[idx])*domega_sig[idx], capsize=5, color='k', marker='o', markersize=4, linestyle='') 
-        axs[idx].plot(time_arr, domega_muhz[idx], 'o-k')
-    fig.supxlabel('Time [day]', fontsize=14)
-    fig.supylabel('$\\delta\\omega_\\ell$ in $\\mu$Hz', fontsize=14)
-    fig.tight_layout()
-    fig.savefig(f'{PAPDIR}/delnu-comparison-{kicstr}.png')
+        domega_muhz_santos.append(pbobs)
+        domega_err_santos.append(pbobse)
+
+    fig, axs = plot_compare(domega_muhz_santos, domega_err_santos, domega1muhz, domega_sig)
+    fig.savefig(f'{PAPDIR}/delnu1-comparison-{kicstr}.png')
+    plt.show(fig)
+
+    fig, axs = plot_compare(domega_muhz_santos, domega_err_santos, domega2muhz, domega_sig)
+    fig.savefig(f'{PAPDIR}/delnu2-comparison-{kicstr}.png')
+    plt.show(fig)
+
+    fig, axs = plot_cc(pschunks, pfilt_list, pexcl_list, time_arr, fittype='polynomial', dfreq=dfreq)
+    fig.savefig(f'{PAPDIR}/ccfit-{kicstr}.png')
