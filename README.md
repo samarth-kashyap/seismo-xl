@@ -17,23 +17,15 @@ freqmax: 6000.
 data_dir: "./data"
 output_dir: "/scratch/seismo/kashyap/processed/p11-seismo-xl"
 ```
-`Navg` - is the length of sub-series (days)
-
-`Nshift` - difference in start times between adjacent sub-series (days)
-
-`Nmcmc` - Number of MCMC iterations needed for computing errors
-
-`nmin` - Minimum radial order for peakbagging
-
-`nmax` - Maximum radial order for peakbagging
-
-`freqmin` - Minimum frequency for peakbagging (muHz)
-
-`freqmax` - Maximum frequency for peakbagging (muHz)
-
-`data_dir` - Path of lightcurves
-
-`output_dir` - Path of output files
+`Navg` - is the length of sub-series (days)  
+`Nshift` - difference in start times between adjacent sub-series (days)  
+`Nmcmc` - Number of MCMC iterations needed for computing errors  
+`nmin` - Minimum radial order for peakbagging  
+`nmax` - Maximum radial order for peakbagging  
+`freqmin` - Minimum frequency for peakbagging (muHz)  
+`freqmax` - Maximum frequency for peakbagging (muHz)  
+`data_dir` - Path of lightcurves  
+`output_dir` - Path of output files  
 
 After setting up config file, first run peakbagging using 
 ```
