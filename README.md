@@ -18,19 +18,31 @@ data_dir: "./data"
 output_dir: "/scratch/seismo/kashyap/processed/p11-seismo-xl"
 ```
 `Navg` - is the length of sub-series (days)
+
 `Nshift` - difference in start times between adjacent sub-series (days)
+
 `Nmcmc` - Number of MCMC iterations needed for computing errors
+
 `nmin` - Minimum radial order for peakbagging
+
 `nmax` - Maximum radial order for peakbagging
+
 `freqmin` - Minimum frequency for peakbagging (muHz)
+
 `freqmax` - Maximum frequency for peakbagging (muHz)
+
 `data_dir` - Path of lightcurves
+
 `output_dir` - Path of output files
 
 After setting up config file, first run peakbagging using 
-```python peakbag_kepler.py --kic 8006161```
+```
+python peakbag_kepler.py --kic 8006161
+```
 Note that this step requires the use of the [apollinaire](https://gitlab.com/sybreton/apollinaire) package.
 
 Once the peakbagging is complete. You can compute frequency changes using
-```python compute_delnu.py --kic 8006161```
+```
+python compute_delnu.py --kic 8006161
+```
 
