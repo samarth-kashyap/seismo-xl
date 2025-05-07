@@ -13,7 +13,6 @@ from stellarspec import solarPS
 GVARS = globalVars()
 ELLS, ENNS, NUS, FWHMS, SIG_FWHMS = GVARS.load_data()
 
-
 #--------------------- ARGUMENT PARSER ---------------------------------
 parser = argparse.ArgumentParser(description='Process some integers.')
 parser.add_argument('--source', type=str, default='valeriy', help='VIRGO data source')

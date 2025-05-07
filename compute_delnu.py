@@ -177,6 +177,29 @@ def gaussian(x, *p):
     return A*np.exp(-(x-mu)**2/(2.*sigma**2)) + k
 
 
+def lorentzian(x, *p):
+    """Creates a lorentzian with the defined parameters. Useful for 
+    passing the function to scipy.optimize.curve_fit
+
+    Parameters
+    ----------
+    :x: domain on which gaussian is defined
+    :type: np.ndarray(ndim=1, dtype=float)
+
+    :p: parameters corresponding to the lorentzian
+    :type: list(len=4)
+        p[0] = Amplitude of gaussian
+        p[1] = centroid location
+        p[2] = sigma
+        p[3] = dc shift
+
+    Returns
+    -------
+    lorentzian profile on x
+    """
+    A, mu, sigma, k = p
+    return A/(1 + ((x-mu)/sigma)**2) + k
+
 
 def compute_cc(arr1, arr2, maxlag=20):
     """Computes the cross-correlation for lags in the range (-maxlag, maxlag+1)
@@ -216,7 +239,7 @@ def compute_cc(arr1, arr2, maxlag=20):
     return lags, cc
 
 
-def get_freqlags_corrected(refarr, pfilt_list, pexcl_list, maxlag=20):
+def get_freqlags_corrected(refarr, pfilt_list, pexcl_list, fitfunc, maxlag=20):
     # print(f"max frequency lag = {maxlag*dfreq:.2f} muHz")
     
     # corr_mat stores the correlation matrix [ell, time_chunk, lag]
@@ -237,7 +260,7 @@ def get_freqlags_corrected(refarr, pfilt_list, pexcl_list, maxlag=20):
         lags_bg, corr_bg = compute_cc(pexcl_list[jdx], pfilt_list[jdx], maxlag=maxlag)
         corr = corr - corr_bg
         try:
-            coeff, var_matrix = curve_fit(gaussian, lags, corr, p0=p0)
+            coeff, var_matrix = curve_fit(fitfunc, lags, corr, p0=p0)
         except RuntimeError:
             coeff[1] = np.nan
         corr_mat_gauss[jdx, :] = gaussian(lags, *coeff)
@@ -287,7 +310,9 @@ def compute_delnu(pschunks, pfilt_list, pexcl_list, dfreq, maxlag=20, fittype='g
 
     for idx in range(pschunks.shape[0]):
         if fittype=='gaussian':
-            (_cm, _cmg), (_cma, _cmag), _cbg_list = get_freqlags_corrected(pschunks[idx], pfilt_list, pexcl_list, maxlag=maxlag)
+            (_cm, _cmg), (_cma, _cmag), _cbg_list = get_freqlags_corrected(pschunks[idx], pfilt_list, pexcl_list, gaussian, maxlag=maxlag)
+        elif fittype=='lorentzian':
+            (_cm, _cmg), (_cma, _cmag), _cbg_list = get_freqlags_corrected(pschunks[idx], pfilt_list, pexcl_list, lorentzian, maxlag=maxlag)
         elif fittype=='polynomial':
             (_cm, _cmg), (_cma, _cmag), _cbg_list = get_freqlags_polyfit(pschunks[idx], pfilt_list, pexcl_list, maxlag=maxlag)
         corr_mat[:, idx, :] = _cm
@@ -321,26 +346,28 @@ def moving_avg(x, w):
 
 
 
-def plot_compare(dom_santos, derr_santos, dom, derr):
+def plot_compare(time_arr, dom_santos, derr_santos, dom, derr):
     def get_dcs(arr1, arr2):
         _arr1, _arr2 = arr1*1., arr2*1.
         masknan = np.isnan(arr1) + np.isnan(arr2)
         _arr1[masknan] = 0.
         _arr2[masknan] = 0.
         darr = _arr1 - _arr2
-        return np.sqrt(np.diag(darr @ darr.T))/darr.shape[-1]
+        darr2 = darr**2
+        return np.sqrt(np.nanmean(darr2))*np.ones_like(_arr1)
 
-    dcs = get_dcs(np.array(dom_santos), dom)
+    # For fixing reference; 
+    dcs = [get_dcs(np.array(dom_santos[idx]), dom[idx]) for idx in range(len(dom_santos))]
         
     fig, axs = plt.subplots(nrows=1, ncols=3, figsize=(10, 3), sharex=True, sharey=True)
-    for idx in range(ARGS.lmax):
+    for idx in range(len(dom_santos)):
         axs[idx].set_title('$\\ell$ = ' + f'{idx}')
         axs[idx].errorbar(time_arr, dom_santos[idx]+dcs[idx], yerr=derr_santos[idx], 
-                          capsize=5, color='r', marker='o', markersize=4, alpha=0.8, linestyle='', 
-                          label='Santos et. al. (2018)') 
+                          capsize=5, color='r', marker='o', markersize=4, alpha=0.8, 
+                          linestyle='', label='Santos et. al. (2018)') 
         axs[idx].errorbar(time_arr, dom[idx], yerr=np.ones_like(dom[idx])*derr[idx], 
-                          capsize=5, color='k', marker='x', markersize=4, alpha=0.8, linestyle='', label='This work') 
-        #axs[idx].plot(time_arr, dom[idx], 'o-k', alpha=0.4)
+                          capsize=5, color='k', marker='x', markersize=4, alpha=0.8, 
+                          linestyle='', label='This work') 
         axs[idx].legend()
     fig.supxlabel('Time [day]', fontsize=14)
     fig.supylabel('$\\delta\\omega_\\ell$ in $\\mu$Hz', fontsize=14)
@@ -530,13 +557,21 @@ if __name__ == "__main__":
     maxlag = 34
     dfreq = freq_arr[1] - freq_arr[0]
 
-    domega1muhz = compute_delnu(pschunks, pfilt_list, pexcl_list, dfreq, maxlag=maxlag, fittype='gaussian')
-    domega2muhz = compute_delnu(pschunks, pfilt_list, pexcl_list, dfreq, maxlag=maxlag, fittype='polynomial')
-    domega_mc_list, domega_sig = compute_errors_montecarlo(psfit, pfilt_list, pexcl_list, dfreq, maxlag=maxlag, samples=1000)
+    domega1muhz = compute_delnu(pschunks, pfilt_list, pexcl_list, dfreq, 
+                                maxlag=maxlag, fittype='gaussian')
+    domega2muhz = compute_delnu(pschunks, pfilt_list, pexcl_list, dfreq, 
+                                maxlag=maxlag, fittype='polynomial')
+    domega3muhz = compute_delnu(pschunks, pfilt_list, pexcl_list, dfreq, 
+                                maxlag=maxlag, fittype='lorentzian')
+    domega_mc_list, domega_sig = compute_errors_montecarlo(psfit, pfilt_list, 
+                                                           pexcl_list, dfreq, 
+                                                           maxlag=maxlag, 
+                                                           samples=1000)
 
     opdict = {}
     opdict['domega_muhz_gaussian'] = domega1muhz
     opdict['domega_muhz_polynomial'] = domega2muhz
+    opdict['domega_muhz_lorentzian'] = domega3muhz
     opdict['domega_sig'] = domega_sig
     opdict['domega_mc_list'] = domega_mc_list
     opdict['time_arr'] = obsdata['tmid_list']
@@ -558,12 +593,16 @@ if __name__ == "__main__":
         domega_muhz_santos.append(pbobs)
         domega_err_santos.append(pbobse)
 
-    fig, axs = plot_compare(domega_muhz_santos, domega_err_santos, domega1muhz, domega_sig)
+    fig, axs = plot_compare(time_arr, domega_muhz_santos, domega_err_santos, domega1muhz, domega_sig)
     fig.savefig(f'{PAPDIR}/delnu1-comparison-{kicstr}.png')
     plt.show(fig)
 
-    fig, axs = plot_compare(domega_muhz_santos, domega_err_santos, domega2muhz, domega_sig)
+    fig, axs = plot_compare(time_arr, domega_muhz_santos, domega_err_santos, domega2muhz, domega_sig)
     fig.savefig(f'{PAPDIR}/delnu2-comparison-{kicstr}.png')
+    plt.show(fig)
+
+    fig, axs = plot_compare(time_arr, domega_muhz_santos, domega_err_santos, domega3muhz, domega_sig)
+    fig.savefig(f'{PAPDIR}/delnu3-comparison-{kicstr}.png')
     plt.show(fig)
 
     fig, axs = plot_cc(pschunks, pfilt_list, pexcl_list, time_arr, fittype='polynomial', dfreq=dfreq)
