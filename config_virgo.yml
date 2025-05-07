@@ -1,0 +1,9 @@
+Navg: 180
+Nshift: 45
+Nmcmc: 10000
+nmin: 16 
+nmax: 26
+freqmin: 150.
+freqmax: 6000.
+data_dir: "/scratch/seismo/kashyap/data/virgo"
+output_dir: "/scratch/seismo/kashyap/processed/p11-seismo-xl"

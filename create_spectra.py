@@ -1,13 +1,13 @@
-import numpy as np
 import h5py
 import argparse
-import matplotlib.pyplot as plt
+import numpy as np
 from tqdm import tqdm
+import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
 
 # Local imports
 from src.globalvars import globalVars
-from stellarspec import solarPS
+from stellarspec import stellarPS
 
 # Defining some global variables
 GVARS = globalVars()
@@ -181,8 +181,8 @@ def get_pslbg(SPS, visibility_matrix=True, return_nl_list=True):
 
     Parameters
     ----------
-    :SPS: instance of class src.model.cross_covariance.solarPS
-    :type: solarPS
+    :SPS: instance of class src.model.cross_covariance.stellarPS
+    :type: stellarPS
 
     :visibility_matrix: Set True to include corrections due to visibility matrix
     :type: bool (default: True)
@@ -428,7 +428,7 @@ if __name__ == "__main__":
     amps_llk[-2:] = bgamps
     amps_llk = amps*1.0
 
-    SPS = solarPS(lmax=ARGS.lmax,
+    SPS = stellarPS(lmax=ARGS.lmax,
                   mode_ell=ELLS,
                   mode_enn=ENNS,
                   mode_nu=NUS,

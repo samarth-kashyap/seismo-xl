@@ -1,8 +1,17 @@
 import numpy as np
 
 def read_modeparams(fname):
-    """Read mode parameters from pkb file
+    """Read mode parameters from apollinaire output (pkb file)
     
+    Parameters
+    ----------
+    :fname: Filename
+    :type: str
+
+    Returns
+    -------
+    :mode_dict: dictionary containing mode parameter data
+    :keys: ell, enn, nu, height, width, incl, signu, sigh, sigw, sigi
     """
     data = np.loadtxt(fname)
     # enn, ell, nu, signu-, signu+, h, sigh-, sigh+, w, sigw-, sigw+, i, sigi-, sigi+
@@ -30,8 +39,30 @@ def read_modeparams(fname):
 
 
 def read_a2z(fname):
+    """Read output of apollinaire (a2z file)
+
+    Parameters
+    ----------
+    :fname: Filename
+    :type: str
+
+    Returns
+    -------
+    :mode_data: array containing mode parameter data
+    :type: np.ndarray(ndim=2, dtype=float)
+
+    :mode_cols: labels of columns corresponding to mode_data
+    :type: list(str)
+
+    Notes:
+    ------
+    mode_cols = ['enn', 'ell', 'freq', 'amp', 'gamma']
+
+    """
     def combine_GAf_data(gamma, amp, freq, ampl):
+        """Combines the gamma, amplitudes and frequency data"""
         def remove_duplicates(data):
+            """Removes duplicates in existing data"""
             enn = data[:, 0]
             ell = data[:, 1]
             new_data = []
@@ -117,6 +148,19 @@ def read_a2z(fname):
 
 
 def read_bgparams(fname):
+    """Read background parameters from apollinaire file. This is used to build
+    background profile independently
+    
+    Parameters
+    ----------
+    :fname: File name
+    :type: str
+
+    Returns
+    -------
+    :param: background parameters in Hz
+    :type: np.ndarray(ndim=1, dtype=float)
+    """
     with open(fname) as f:
         data = f.read().splitlines()
     

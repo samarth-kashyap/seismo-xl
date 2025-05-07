@@ -2,25 +2,30 @@ import os
 import argparse
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
+import apollinaire as apn
 from sgkutils import saveh5
 from astropy.io import fits
-import apollinaire as apn
+import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
 
+# Local imports
+from src.config import Config
+PARAMS = Config('./config_virgo.yml')
+
+# Argument parser can override configuration through command line
 parser = argparse.ArgumentParser()
-parser.add_argument('--Navg', type=int, default=90 ,help='Length of sub-series (days)')
-parser.add_argument('--Nshift', type=int, default=15, help='Shift between sub-series (days)')
+parser.add_argument('--Navg', type=int, default=PARAMS.Navg ,help='Length of sub-series (days)')
+parser.add_argument('--Nshift', type=int, default=PARAMS.Nshift, help='Shift between sub-series (days)')
 parser.add_argument('--peakbag', action='store_true', help='Fit spectra')
-parser.add_argument('--Nmcmc', type=int, default=10000, help='Num of MCMC steps')
-parser.add_argument('--nmin', type=int, default=16, help='Minimum radial order fitted')
-parser.add_argument('--nmax', type=int, default=26, help='Maximum radial order fitted')
-parser.add_argument('--freqmin', type=float, default=150., help='Min freq in muHz')
-parser.add_argument('--freqmax', type=float, default=6000., help='Max freq in muHz')
+parser.add_argument('--Nmcmc', type=int, default=PARAMS.Nmcmc, help='Num of MCMC steps')
+parser.add_argument('--nmin', type=int, default=PARAMS.nmin, help='Minimum radial order fitted')
+parser.add_argument('--nmax', type=int, default=PARAMS.nmax, help='Maximum radial order fitted')
+parser.add_argument('--freqmin', type=float, default=PARAMS.freqmin, help='Min freq in muHz')
+parser.add_argument('--freqmax', type=float, default=PARAMS.freqmax, help='Max freq in muHz')
 ARGS = parser.parse_args()
 
-data_dir = "/scratch/seismo/kashyap/data/virgo"
-output_dir = f"/scratch/seismo/kashyap/processed/p11-seismo-xl/virgo"
+data_dir = PARAMS.data_dir
+output_dir = f"{PARAMS.output_dir}/virgo"
 
 def gaussian(x, mu, fwhm):
     """Returns a gaussian of chosen center and fwhm.
@@ -150,7 +155,7 @@ if __name__ == "__main__":
     savedict['r'] = r
     savedict['m'] = m
     savedict['teff'] = teff
-    saveh5(f"{output_dir}/kplr{kicstr}-N{int(ARGS.Navg)}-s{int(ARGS.Nshift)}.h5", savedict)
+    saveh5(f"{output_dir}/virgo-N{int(ARGS.Navg)}-s{int(ARGS.Nshift)}.h5", savedict)
 
     order_to_fit = np.arange(ARGS.nmin, ARGS.nmax)
     if ARGS.peakbag:

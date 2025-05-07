@@ -1,18 +1,12 @@
 __all__ = ["stellarPS",
-           "refWavelets",
-           "csCorrection",
-           "greensFunctions",
            "visibilityMatrix",
            "GVARS"]
 
 __authors__ = ["samarth-kashyap"]
 
 # Loading python modules
-import sys
 import logging
 import numpy as np
-from scipy.interpolate import interp1d
-from scipy.special import erf
 from pyshtools import legendre
 from ritzLavelyPy.rlclass import ritzLavelyPoly
 
@@ -32,19 +26,9 @@ def get_normed_cc(tmax_plot, tmin, tmax, C):
 
 class stellarPS():
     """Class for constructing solar power spectrum."""
-    __attributes__ = ["lmax",
-                      "incl_angle",
-                      "cosi",
-                      "mode_ell",
-                      "mode_nu",
-                      "mode_fwhm",
-                      "mode_sigfwhm"]
     __methods__ = ["lorentzian",
-                   "ps_from_lor",
-                   "construct_ps_full",
-                   "ps_envelope",
-                   "get_background_lowfreq",
-                   "get_background_midfreq"]
+                   "construct_ps_list",
+                   "construct_ps_normed_nlm"]
 
     def __init__(self,
                  freqarr=np.arange(10)*0.01,
@@ -102,21 +86,6 @@ class stellarPS():
         lor1 = 1./(dxg1**2 + 1.0)
         return lor1
 
-    def ps_from_lor(self, nuc, gamma):
-        """Get power-spectrum from lorentzian profile.
-
-        Parameters
-        ----------
-        nuc : np.float64
-            location of peak (in Hz)
-        gamma : np.float64
-            damping rate (in Hz)
-
-        Returns
-        --------
-            Power spectrum
-        """
-        return self.lorentzian(nuc, gamma)
 
     def construct_ps_list(self, ell=1, visibility_matrix=True, return_nl_list=False, shiftfreq=0.0, shiftenn=-10):
         mask_ell = self.mode_ell==ell
@@ -147,7 +116,7 @@ class stellarPS():
                     nu_lm = nu_ell[i] + delnu_nlm[idxm]
                     if shiftenn==enn_ell[i]: nu_lm += shiftfreq
                     _elm = vsm.get_elm(ell, emm)
-                    _ps = _elm * self.ps_from_lor(nu_lm, fwhm_ell[i])
+                    _ps = _elm * self.lorentzian(nu_lm, fwhm_ell[i])
                     _pslm.append(_ps)
                     psl = psl + _ps
                 ps_nlm_list.append(_pslm)#/psl.max())
@@ -159,7 +128,7 @@ class stellarPS():
         else:
             LOGGER.info("NOT Using visibility matrix")
             for i in range(num_modes):
-                psl = self.ps_from_lor(nu_ell[i], fwhm_ell[i])
+                psl = self.lorentzian(nu_ell[i], fwhm_ell[i])
                 ps_list.append(psl)#/psl.max())
                 ell_list.append(ell)
                 enn_list.append(enn_ell[i])
@@ -219,7 +188,7 @@ class stellarPS():
         for idxm, emm in enumerate(range(-ell, ell+1)):
             nu_m = nu0 + delnu_nlm[idxm]
             _elm = vsm.get_elm(ell, emm)
-            _ps = _elm * self.ps_from_lor(nu_m, fwhm0)
+            _ps = _elm * self.lorentzian(nu_m, fwhm0)
             ps_nlm.append(_ps)
         return ps_nlm
 
@@ -290,5 +259,3 @@ class visibilityMatrix(stellarPS):
         elif (l==2) and (abs(m)==0): return 0.25*(3*x**2 -1.)**2
         elif (l==2) and (abs(m)==1): return 1.5*(x**2)*(1-x**2)
         elif (l==2) and (abs(m)==2): return 3./8.*(1.-x**2)**2
-
-
