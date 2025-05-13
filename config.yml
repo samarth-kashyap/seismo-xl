@@ -1,9 +1,11 @@
 Navg: 180
 Nshift: 45
 Nmcmc: 10000
+samples: 1000
 nmin: 16 
 nmax: 26
 freqmin: 150.
 freqmax: 6000.
+maxlag: 34
 data_dir: "./data"
 output_dir: "/scratch/seismo/kashyap/processed/p11-seismo-xl"

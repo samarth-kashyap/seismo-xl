@@ -20,10 +20,6 @@ GVARS = globalvars.globalVars()
 LOGGER = logger.create_logger_stream(__name__, logging.NOTSET)
 
 
-def get_normed_cc(tmax_plot, tmin, tmax, C):
-    return C[:tmax_plot]/np.amax(C[tmin:tmax])
-
-
 class stellarPS():
     """Class for constructing solar power spectrum."""
     __methods__ = ["lorentzian",
@@ -87,7 +83,9 @@ class stellarPS():
         return lor1
 
 
-    def construct_ps_list(self, ell=1, visibility_matrix=True, return_nl_list=False, shiftfreq=0.0, shiftenn=-10):
+    def construct_ps_list(self, ell=1, visibility_matrix=True, 
+                          return_nl_list=False, shiftfreq=0.0, shiftenn=-10):
+        """Construct list of PS"""
         mask_ell = self.mode_ell==ell
         enn_ell = self.mode_enn[mask_ell]
         nu_ell = self.mode_nu[mask_ell]
@@ -129,7 +127,7 @@ class stellarPS():
             LOGGER.info("NOT Using visibility matrix")
             for i in range(num_modes):
                 psl = self.lorentzian(nu_ell[i], fwhm_ell[i])
-                ps_list.append(psl)#/psl.max())
+                ps_list.append(psl)
                 ell_list.append(ell)
                 enn_list.append(enn_ell[i])
         if return_nl_list:

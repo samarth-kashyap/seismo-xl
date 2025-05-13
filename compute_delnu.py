@@ -10,6 +10,9 @@ from scipy.optimize import curve_fit, minimize
 from sgkutils import readh5, saveh5
 from src.utils import read_a2z
 from src.stellarspec import stellarPS
+from src.config import Config
+
+PARAMS = Config('./config.yml')
 
 
 def get_freqlags(refarr, pfilt_list, maxlag=20):
@@ -375,6 +378,38 @@ def plot_compare(time_arr, dom_santos, derr_santos, dom, derr):
     return fig, axs
 
 
+def plot_compare_vertical(time_arr, dom_santos, derr_santos, dom, derr):
+    def get_dcs(arr1, arr2):
+        _arr1, _arr2 = arr1*1., arr2*1.
+        masknan = np.isnan(arr1) + np.isnan(arr2)
+        _arr1[masknan] = 0.
+        _arr2[masknan] = 0.
+        darr = _arr1 - _arr2
+        darr2 = darr**2
+        return np.sqrt(np.nanmean(darr2))*np.ones_like(_arr1)
+
+    # For fixing reference; 
+    dcs = [get_dcs(np.array(dom_santos[idx]), dom[idx]) for idx in range(len(dom_santos))]
+        
+    fig, axs = plt.subplots(nrows=3, ncols=1, figsize=(4, 5.5), sharey=True)
+    for idx in range(len(dom_santos)):
+        #axs[idx].set_title('$\\ell$ = ' + f'{idx}')
+        axs[idx].errorbar(time_arr, dom_santos[idx]+dcs[idx], yerr=derr_santos[idx], 
+                          capsize=5, color='r', marker='o', markersize=4, alpha=0.8, 
+                          linestyle='', label='Santos et. al. (2018)') 
+        axs[idx].errorbar(time_arr, dom[idx], yerr=np.ones_like(dom[idx])*derr[idx], 
+                          capsize=5, color='k', marker='x', markersize=4, alpha=0.8, 
+                          linestyle='', label='This work') 
+        _axs = axs[idx].twinx()
+        _axs.set_ylabel('$\\ell$ = ' + f'{idx}', rotation=0, labelpad=15, fontsize=12)
+        _axs.set_yticks(ticks=np.arange(4)*0.5 - 0.5, labels=[])
+        axs[idx].legend()
+    fig.supxlabel('Time [day]', fontsize=12)
+    fig.supylabel('$\\delta\\omega_\\ell$ in $\\mu$Hz', fontsize=12)
+    fig.tight_layout()
+    return fig, axs
+
+
 def plot_cc(psc, psf, pse, tarr, numfitpix=10, fittype='gaussian', dfreq=1.e-6):
     t0 = tarr[0]
     dt = tarr[1]-tarr[0]
@@ -554,7 +589,7 @@ if __name__ == "__main__":
     fig.supxlabel('Frequency [mHz]')
     fig.supylabel('Power [ppm^2/muHz]')
 
-    maxlag = 34
+    maxlag = PARAMS.maxlag
     dfreq = freq_arr[1] - freq_arr[0]
 
     domega1muhz = compute_delnu(pschunks, pfilt_list, pexcl_list, dfreq, 
@@ -566,7 +601,7 @@ if __name__ == "__main__":
     domega_mc_list, domega_sig = compute_errors_montecarlo(psfit, pfilt_list, 
                                                            pexcl_list, dfreq, 
                                                            maxlag=maxlag, 
-                                                           samples=1000)
+                                                           samples=PARAMS.samples)
 
     opdict = {}
     opdict['domega_muhz_gaussian'] = domega1muhz
