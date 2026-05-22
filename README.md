@@ -1,40 +1,165 @@
-# Filtered cross-correlation method for computing frequency changes
+# seismo-xl
 
-This package enables the computing of variation in p-mode frequencies $\delta\omega_\ell$ over time using cross-correlation with filters. 
+**Measure frequency shifts in solar-like oscillators using filtered cross-correlation.**
 
-## Example
+This package implements the filtered cross-correlation method for computing variations in p-mode frequencies ($\delta\omega_\ell$) over time. It supports both Kepler and Virgo/SoHO data.
 
-The first step is to obtain mode parameters using peak bagging. Peakbagging is first performed on averaged spectra. The configuration is specifed in `config.yml`. The contents of the config file are given below
+## Method
+
+The pipeline:
+
+1. **Peakbagging** — Fit mode parameters on the time-averaged power spectrum using [apollinaire](https://gitlab.com/sybreton/apollinaire).
+2. **Power spectrum construction** — Build a model power spectrum from Lorentzian profiles + Harvey-like background + photon noise.
+3. **MI filter construction** — For each spherical harmonic degree $\ell$, construct a *mode-isolation (MI) filter*.
+4. **Cross-correlation** — Cross-correlate each chunk's power spectrum with the MI filter. The peak shift gives $\delta\omega_\ell$.
+5. **Uncertainty** — Monte Carlo realizations (noisify spectrum with $\chi^2_2$ distribution, re-run cross-correlation).
+
+## Installation
+
+### Prerequisites
+
+- Python ≥ 3.9
+- [uv](https://docs.astral.sh/uv/) (recommended) or pip + venv
+- [apollinaire](https://gitlab.com/sybreton/apollinaire) — required for peakbagging
+
+### Using uv (recommended)
+
+```bash
+# Create virtual environment
+uv venv
+
+# Activate
+source .venv/bin/activate
+
+# Install seismo-xl in editable mode
+uv pip install -e ".[dev]"
+
+# With peakbagging support (apollinaire):
+uv pip install -e ".[peakbag]"
+```
+
+### Using pip + venv
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
+```
+
+## Usage
+
+### 1. Configuration
+
+Edit `config.yml` (Kepler) or `config_virgo.yml` (Virgo/SoHO):
+
+```yaml
+Navg: 180            # Sub-series length (days)
+Nshift: 45           # Shift between sub-series (days)
+Nmcmc: 10000         # MCMC iterations for peakbagging
+nmin: 16             # Minimum radial order
+nmax: 26             # Maximum radial order
+freqmin: 150.        # Min frequency (μHz)
+freqmax: 6000.       # Max frequency (μHz)
+data_dir: "./data"   # Lightcurve directory
+output_dir: "/path/to/output"
+```
+
+### 2. Peakbagging
+
+Fit mode parameters on the average spectrum:
+
+```bash
+# Kepler
+python peakbag_kepler.py --kic 8006161 --peakbag
+
+# Virgo/SoHO
+python peakbag_virgo.py --peakbag
+```
+
+### 3. Compute frequency shifts
+
+```bash
+python compute_delnu.py --kic 8006161 --lmax 3
+```
+
+### 4. Synthetic tests (Virgo/SoHO mode set)
+
+```bash
+python create_spectra.py --source valeriy --channel blue --Ncarr 3
+```
+
+## Project structure
 
 ```
-Navg: 180
-Nshift: 45
-Nmcmc: 10000
-nmin: 16
-nmax: 26
-freqmin: 150.
-freqmax: 6000.
-data_dir: "./data"
-output_dir: "/scratch/seismo/kashyap/processed/p11-seismo-xl"
-```
-`Navg` - is the length of sub-series (days)  
-`Nshift` - difference in start times between adjacent sub-series (days)  
-`Nmcmc` - Number of MCMC iterations needed for computing errors  
-`nmin` - Minimum radial order for peakbagging  
-`nmax` - Maximum radial order for peakbagging  
-`freqmin` - Minimum frequency for peakbagging (muHz)  
-`freqmax` - Maximum frequency for peakbagging (muHz)  
-`data_dir` - Path of lightcurves  
-`output_dir` - Path of output files  
-
-After setting up config file, first run peakbagging using 
-```
-python peakbag_kepler.py --kic 8006161
-```
-Note that this step requires the use of the [apollinaire](https://gitlab.com/sybreton/apollinaire) package.
-
-Once the peakbagging is complete. You can compute frequency changes using
-```
-python compute_delnu.py --kic 8006161
+.
+├── pyproject.toml          # Package metadata & dependencies
+├── setup.py                # Legacy setup (editable install support)
+├── src/
+│   ├── __init__.py
+│   ├── config.py           # YAML config loader with !include support
+│   ├── globalvars.py       # Global constants & helper classes
+│   ├── logger.py           # Logging utilities
+│   ├── stellarspec.py      # Stellar power spectrum construction
+│   └── utils.py            # Mode parameter readers & utilities
+├── peakbag_kepler.py       # Kepler peakbagging entry point
+├── peakbag_virgo.py        # Virgo/SoHO peakbagging entry point
+├── compute_delnu.py        # Frequency shift computation
+├── create_spectra.py       # Synthetic spectra (Virgo mode set)
+├── config.yml              # Kepler configuration
+├── config_virgo.yml        # Virgo/SoHO configuration
+├── notebooks/              # Jupyter notebooks for analysis & validation
+└── jobscripts/             # Slurm batch scripts
 ```
 
+## Dependencies
+
+| Package | Role |
+|---|---|
+| `numpy`, `scipy` | Numerical |
+| `matplotlib` | Plotting |
+| `h5py` | HDF5 I/O |
+| `pandas` | CSV data |
+| `pyyaml` | Config |
+| `astropy` | FITS reading |
+| `tqdm` | Progress bars |
+| `pyshtools` | Legendre polynomials |
+| `ritzLavelyPy` | Rotational splitting polynomials |
+| `sgkutils` | HDF5 read/write helpers |
+| `apollinaire` | Peakbagging (optional, needed for `--peakbag`) |
+
+## Notes
+
+### Configurable paths
+
+All hardcoded scratch paths have been replaced with configurable CLI arguments or the `.config` file.
+
+**Script-level overrides** (command-line args):
+
+| Script | Flag | Default | Description |
+|---|---|---|---|
+| `compute_delnu.py` | `--output-dir` | `config.yml` → `output_dir` | Base dir for processed data |
+| `compute_delnu.py` | `--papers-dir` | `{output_dir}/papers` | Where paper figures are saved |
+| `create_spectra.py` | `--scratch-dir` | `/path/to/sun-intg` | Base dir for synthetic spectra |
+
+**Package-level paths** (`.config` file in repo root, one path per line):
+
+```
+# Line 0: eigenfunction directory (e.g., efs_Jesper)
+# Line 1: Virgo/SoHO time-series data
+# Line 2: processed output base
+# Line 3: FWHM observations (contains Larson_Schou_MDI_2015.dat)
+# Line 4: sun-integral processed/models
+# Line 5: synthetics output
+```
+
+Create `.config` with your own paths before using `globalvars.py` features.
+
+## Citation
+
+If you use this code in published research, please cite:
+
+> Kashyap, S., et al. (2025). *Frequency shifts in solar-like oscillators using filtered cross-correlation*. (In prep.)
+
+## License
+
+MIT

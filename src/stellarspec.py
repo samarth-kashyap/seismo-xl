@@ -1,6 +1,5 @@
 __all__ = ["stellarPS",
-           "visibilityMatrix",
-           "GVARS"]
+           "visibilityMatrix"]
 
 __authors__ = ["samarth-kashyap"]
 
@@ -11,10 +10,7 @@ from pyshtools import legendre
 from ritzLavelyPy.rlclass import ritzLavelyPoly
 
 # Loading custom modules
-from . import globalvars
 from . import logger
-
-GVARS = globalvars.globalVars()
 
 # Creating logger
 LOGGER = logger.create_logger_stream(__name__, logging.NOTSET)

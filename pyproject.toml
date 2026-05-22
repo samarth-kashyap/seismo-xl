@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "seismo-xl"
+version = "0.1.0"
+description = "Measure frequency shifts in solar-like oscillators using filtered cross-correlation"
+authors = [
+    {name = "Samarth Kashyap", email = "samarth.kashyap@physics.uu.se"},
+]
+license = {text = "MIT"}
+readme = "README.md"
+requires-python = ">=3.9"
+
+dependencies = [
+    "numpy>=1.22",
+    "scipy>=1.7",
+    "matplotlib>=3.5",
+    "pyyaml>=6.0",
+    "pyshtools>=4.10",
+    "h5py>=3.6",
+    "pandas>=1.4",
+    "tqdm>=4.60",
+    "astropy>=5.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "jupyter>=1.0",
+    "ipykernel>=6.0",
+]
+peakbag = [
+    "apollinaire>=0.1",
+]
+all = [
+    "seismo-xl[dev,peakbag]",
+]
+
+[project.urls]
+Repository = "https://github.com/samarth-kashyap/seismo-xl"
+Documentation = "https://github.com/samarth-kashyap/seismo-xl#readme"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"*" = ["*.yml", "*.yaml"]

@@ -493,6 +493,10 @@ if __name__ == "__main__":
     parser.add_argument('--inclang', type=float, default=45., help='Inclination angle')
     parser.add_argument('--freqmin', type=float, default=0.5, help='Minimum freq in mHz')
     parser.add_argument('--freqmax', type=float, default=5.5, help='Maximum freq in mHz')
+    parser.add_argument('--output-dir', type=str, default=PARAMS.output_dir,
+                        help='Output directory (default: config.yml output_dir)')
+    parser.add_argument('--papers-dir', type=str, default=None,
+                        help='Directory for paper figures (default: {output_dir}/papers)')
     ARGS = parser.parse_args()
     #----------------------------------------------------------------------------
     assert ARGS.freqmin>0. and ARGS.freqmax<10., "Min freq out of range"
@@ -500,8 +504,8 @@ if __name__ == "__main__":
     assert ARGS.freqmax>ARGS.freqmin, "maxfreq < minfreq; exiting"
 
     kicstr = f"{ARGS.kic:09d}"
-    PAPDIR = "/scratch/seismo/kashyap/cloud/Yandex.Disk/papers-posters-docs/2025-seismo-xl"
-    scratch_dir = f"/scratch/seismo/kashyap/processed/p11-seismo-xl/{kicstr}"
+    scratch_dir = f"{ARGS.output_dir}/{kicstr}"
+    papers_dir = ARGS.papers_dir if ARGS.papers_dir else f"{ARGS.output_dir}/papers"
     try:
         santos_data = pd.read_csv(f'./data/santos2018b-{kicstr}.csv')
     except FileNotFoundError:
@@ -630,16 +634,16 @@ if __name__ == "__main__":
         domega_err_santos.append(pbobse)
 
     fig, axs = plot_compare(time_arr, domega_muhz_santos, domega_err_santos, domega1muhz, domega_sig)
-    fig.savefig(f'{PAPDIR}/delnu1-comparison-{kicstr}.png')
+    fig.savefig(f'{papers_dir}/delnu1-comparison-{kicstr}.png')
     plt.show(fig)
 
     fig, axs = plot_compare(time_arr, domega_muhz_santos, domega_err_santos, domega2muhz, domega_sig)
-    fig.savefig(f'{PAPDIR}/delnu2-comparison-{kicstr}.png')
+    fig.savefig(f'{papers_dir}/delnu2-comparison-{kicstr}.png')
     plt.show(fig)
 
     fig, axs = plot_compare(time_arr, domega_muhz_santos, domega_err_santos, domega3muhz, domega_sig)
-    fig.savefig(f'{PAPDIR}/delnu3-comparison-{kicstr}.png')
+    fig.savefig(f'{papers_dir}/delnu3-comparison-{kicstr}.png')
     plt.show(fig)
 
     fig, axs = plot_cc(pschunks, pfilt_list, pexcl_list, time_arr, fittype='polynomial', dfreq=dfreq)
-    fig.savefig(f'{PAPDIR}/ccfit-{kicstr}.png')
+    fig.savefig(f'{papers_dir}/ccfit-{kicstr}.png')

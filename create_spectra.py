@@ -7,11 +7,10 @@ from scipy.optimize import curve_fit
 
 # Local imports
 from src.globalvars import globalVars
-from stellarspec import stellarPS
+from src.stellarspec import stellarPS
 
 # Defining some global variables
 GVARS = globalVars()
-ELLS, ENNS, NUS, FWHMS, SIG_FWHMS = GVARS.load_data()
 
 #--------------------- ARGUMENT PARSER ---------------------------------
 parser = argparse.ArgumentParser(description='Process some integers.')
@@ -25,6 +24,10 @@ parser.add_argument('--ndays', type=float, default=72, help='Number of observati
 parser.add_argument('--realizations', type=np.int32, default=1000, help='Realizations for MonteCarlo')
 parser.add_argument('--freqmin', type=float, default=0.5, help='Minimum freq in mHz')
 parser.add_argument('--freqmax', type=float, default=5.5, help='Maximum freq in mHz')
+parser.add_argument('--scratch-dir', type=str, default='/scratch/seismo/kashyap/processed/sun-intg',
+                    help='Base directory for data and fits (default: /scratch/.../sun-intg)')
+parser.add_argument('--obs-dir', type=str, default=None,
+                    help='Directory with Larson_Schou_MDI_2015.dat reference data')
 ARGS = parser.parse_args()
 #----------------------------------------------------------------------------
 
@@ -33,7 +36,10 @@ assert ARGS.freqmax>0. and ARGS.freqmax<10., "Max freq out of range"
 assert ARGS.freqmax>ARGS.freqmin, "maxfreq < minfreq; exiting"
 
 
-scratch_dir = f"/scratch/seismo/kashyap/processed/sun-intg"
+scratch_dir = ARGS.scratch_dir
+
+# Load reference mode parameters
+ELLS, ENNS, NUS, FWHMS, SIG_FWHMS = GVARS.load_data(obs_dir=ARGS.obs_dir)
 data_dir = f"{scratch_dir}/data/{ARGS.source}-{ARGS.channel}-Ncarr{ARGS.Ncarr}-skip{ARGS.skipmax:02d}"
 fits_dir = f"{scratch_dir}/ps-fits/{ARGS.source}-{ARGS.channel}-Ncarr{ARGS.Ncarr}-skip{ARGS.skipmax:02d}-ell{ARGS.lmax}-i{ARGS.inclang:02d}"
 
@@ -424,7 +430,7 @@ if __name__ == "__main__":
     bgamps = np.load(f'{fits_dir}/fitted-mode-amplitudes-mod.npy')[-2:]
     kth = np.load(f'{fits_dir}/numean-kernels.npy')
     years = np.load(f'{data_dir}/years.npy')
-    bsp = np.load('/scratch/seismo/kashyap/processed/sun-intg/bsp-basis/bsp_knotnum_15.npy')
+    bsp = np.load(f'{scratch_dir}/bsp-basis/bsp_knotnum_15.npy')
     amps_llk[-2:] = bgamps
     amps_llk = amps*1.0
 
