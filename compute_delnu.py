@@ -404,8 +404,9 @@ def plot_compare_vertical(time_arr, dom_santos, derr_santos, dom, derr):
         _axs.set_ylabel('$\\ell$ = ' + f'{idx}', rotation=0, labelpad=15, fontsize=12)
         _axs.set_yticks(ticks=np.arange(4)*0.5 - 0.5, labels=[])
         axs[idx].legend()
+        axs[idx].set_xticks(np.arange(400, 1410, 200))
     fig.supxlabel('Time [day]', fontsize=12)
-    fig.supylabel('$\\delta\\omega_\\ell$ in $\\mu$Hz', fontsize=12)
+    fig.supylabel('$\\delta\\omega_\\ell$ [$\\mu$Hz]', fontsize=12)
     fig.tight_layout()
     return fig, axs
 

@@ -2,11 +2,20 @@ import os
 import argparse
 import numpy as np
 import pandas as pd
-import apollinaire as apn
 from sgkutils import saveh5
 from astropy.io import fits
 import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
+
+try:
+    import apollinaire as apn
+except:
+    raise ImportError(
+      "seismo-xl requires the package 'apollinaire' to perform peakbagging, "
+      "but apollinaire is not installed. Please install using "
+      "`conda install -c conda-forge apollinaire`, or see "
+      "https://gitlab.com/sybreton/apollinaire for other ways of installing")
+
 
 # Local imports
 from src.config import Config
