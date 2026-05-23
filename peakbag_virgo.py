@@ -2,7 +2,26 @@ import os
 import argparse
 import numpy as np
 import pandas as pd
-from sgkutils import saveh5
+import h5py
+
+
+def saveh5(fname, dictionary):
+    """Save dict to HDF5 file."""
+    def _save(d, group, path='/'):
+        for key, val in d.items():
+            fp = f"{path}/{key}" if path != '/' else f"/{key}"
+            if isinstance(val, dict):
+                _save(val, group, fp)
+            elif isinstance(val, (np.ndarray, list, tuple)):
+                group.create_dataset(fp, data=np.array(val))
+            elif isinstance(val, (str, bytes)):
+                group.create_dataset(fp, data=np.bytes_(val))
+            elif isinstance(val, (int, float, bool, np.number)):
+                group.create_dataset(fp, data=val)
+            else:
+                raise TypeError(f"Unsupported type {type(val)} for key {key}")
+    with h5py.File(fname, 'w') as f:
+        _save(dictionary, f)
 from astropy.io import fits
 import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d

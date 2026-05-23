@@ -8,4 +8,4 @@ freqmin: 150.
 freqmax: 6000.
 maxlag: 34
 data_dir: "./data"
-output_dir: "/scratch/seismo/kashyap/processed/p11-seismo-xl"
+output_dir: "./scratch"

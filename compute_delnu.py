@@ -7,7 +7,50 @@ from scipy.interpolate import interp1d
 from scipy.optimize import curve_fit, minimize
 
 # Local imports
-from sgkutils import readh5, saveh5
+import h5py
+
+
+def readh5(fname):
+    """Load HDF5 file to dict."""
+    def _load(group, path='/'):
+        result = {}
+        for key in group[path].keys():
+            fp = f"{path}/{key}" if path != '/' else f"/{key}"
+            item = group[fp]
+            if isinstance(item, h5py.Group):
+                result[key] = _load(group, fp)
+            else:
+                data = item[()]
+                if isinstance(data, bytes):
+                    result[key] = data.decode('utf-8')
+                elif isinstance(data, np.ndarray) and data.size == 1:
+                    result[key] = data.item()
+                elif isinstance(data, np.ndarray) and len(data.shape) == 1:
+                    result[key] = data.tolist() if data.dtype.kind in 'biufc' else data
+                else:
+                    result[key] = data
+        return result
+    with h5py.File(fname, 'r') as f:
+        return _load(f)
+
+
+def saveh5(fname, dictionary):
+    """Save dict to HDF5 file."""
+    def _save(d, group, path='/'):
+        for key, val in d.items():
+            fp = f"{path}/{key}" if path != '/' else f"/{key}"
+            if isinstance(val, dict):
+                _save(val, group, fp)
+            elif isinstance(val, (np.ndarray, list, tuple)):
+                group.create_dataset(fp, data=np.array(val))
+            elif isinstance(val, (str, bytes)):
+                group.create_dataset(fp, data=np.bytes_(val))
+            elif isinstance(val, (int, float, bool, np.number)):
+                group.create_dataset(fp, data=val)
+            else:
+                raise TypeError(f"Unsupported type {type(val)} for key {key}")
+    with h5py.File(fname, 'w') as f:
+        _save(dictionary, f)
 from src.utils import read_a2z
 from src.stellarspec import stellarPS
 from src.config import Config
