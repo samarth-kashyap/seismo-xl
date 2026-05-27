@@ -2,26 +2,23 @@
 import logging
 
 def create_logger_file(logger_name, logger_file, logger_level):
-    """Creates a logger with a given name and specified logger level.
+    """Create a file-backed logger with a given name and level.
 
     Parameters
     ----------
     logger_name : str
-        name of the logger
+        Name of the logger (typically ``__name__`` of the calling module).
     logger_file : str
-        file name of the logger
-    logger_level :
-        takes one of
-        (logging.NOTSET,
-        logging.DEBUG,
-        logging.INFO,
-        logging.WARNING,
-        logging.ERROR,
-        logging.CRITICAL)
+        Path to the file where log messages are written.
+    logger_level : int
+        Logging level. One of ``logging.NOTSET``, ``logging.DEBUG``,
+        ``logging.INFO``, ``logging.WARNING``, ``logging.ERROR``, or
+        ``logging.CRITICAL``.
 
     Returns
     -------
-    logger
+    logger : logging.Logger
+        Configured logger that writes to ``logger_file``.
     """
     logger = logging.getLogger(logger_name)
     filehandler = logging.FileHandler(logger_file)
@@ -33,26 +30,21 @@ def create_logger_file(logger_name, logger_file, logger_level):
 
 
 def create_logger_stream(logger_name, logger_level=None):
-    """Creates a logger with a given name and specified logger level.
+    """Create a stream (console) logger with a given name and level.
 
     Parameters
     ----------
     logger_name : str
-        name of the logger
-    logger_file : str
-        file name of the logger
-    logger_level :
-        takes one of
-        (logging.NOTSET,
-        logging.DEBUG,
-        logging.INFO,
-        logging.WARNING,
-        logging.ERROR,
-        logging.CRITICAL)
+        Name of the logger (typically ``__name__`` of the calling module).
+    logger_level : int or None, optional
+        Logging level. One of ``logging.NOTSET``, ``logging.DEBUG``,
+        ``logging.INFO``, ``logging.WARNING``, ``logging.ERROR``, or
+        ``logging.CRITICAL``.
 
     Returns
     -------
-    logger
+    logger : logging.Logger
+        Configured logger that writes to ``sys.stderr``.
     """
     logger = logging.getLogger(logger_name)
     logger.setLevel(logger_level)

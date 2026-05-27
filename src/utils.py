@@ -1,17 +1,19 @@
 import numpy as np
 
 def read_modeparams(fname):
-    """Read mode parameters from apollinaire output (pkb file)
-    
+    """Read mode parameters from an apollinaire output file (.pkb).
+
     Parameters
     ----------
-    :fname: Filename
-    :type: str
+    fname : str
+        Path to the apollinaire .pkb output file.
 
     Returns
     -------
-    :mode_dict: dictionary containing mode parameter data
-    :keys: ell, enn, nu, height, width, incl, signu, sigh, sigw, sigi
+    mode_dict : dict
+        Dictionary with keys ``ell``, ``enn``, ``nu``, ``height``, ``width``,
+        ``incl``, ``signu``, ``sigh``, ``sigw``, ``sigi``, each containing a
+        ``np.ndarray`` of the corresponding mode parameter.
     """
     data = np.loadtxt(fname)
     # enn, ell, nu, signu-, signu+, h, sigh-, sigh+, w, sigw-, sigw+, i, sigi-, sigi+
@@ -39,30 +41,57 @@ def read_modeparams(fname):
 
 
 def read_a2z(fname):
-    """Read output of apollinaire (a2z file)
+    """Read mode parameters from an apollinaire output file (.a2z).
 
     Parameters
     ----------
-    :fname: Filename
-    :type: str
+    fname : str
+        Path to the apollinaire .a2z output file.
 
     Returns
     -------
-    :mode_data: array containing mode parameter data
-    :type: np.ndarray(ndim=2, dtype=float)
+    mode_data : np.ndarray, shape (N, 5)
+        Array of mode parameters with columns ``['enn', 'ell', 'freq', 'amp', 'gamma']``.
+    mode_cols : list of str
+        Column labels corresponding to ``mode_data``.
 
-    :mode_cols: labels of columns corresponding to mode_data
-    :type: list(str)
-
-    Notes:
-    ------
-    mode_cols = ['enn', 'ell', 'freq', 'amp', 'gamma']
-
+    Notes
+    -----
+    Column order: ``['enn', 'ell', 'freq', 'amp', 'gamma']``.
     """
     def combine_GAf_data(gamma, amp, freq, ampl):
-        """Combines the gamma, amplitudes and frequency data"""
+        """Combine per-parameter arrays (gamma, amplitude, frequency) into a
+        single mode-parameter array, removing duplicate (enn, ell) entries.
+
+        Parameters
+        ----------
+        gamma : np.ndarray
+            Line-width data with columns ``[enn, ell, value, ...]``.
+        amp : np.ndarray
+            Height/amplitude data with columns ``[enn, ell, value, ...]``.
+        freq : np.ndarray
+            Frequency data with columns ``[enn, ell, value, ...]``.
+        ampl : np.ndarray, shape (lmax+1, 2)
+            Per-ell amplitude scaling factors.
+
+        Returns
+        -------
+        newdata : np.ndarray, shape (N, 5)
+            Deduplicated array with columns ``[enn, ell, freq, amp, gamma]``.
+        """
         def remove_duplicates(data):
-            """Removes duplicates in existing data"""
+            """Remove duplicate (enn, ell) rows, keeping the first occurrence.
+
+            Parameters
+            ----------
+            data : np.ndarray, shape (N, ...)
+                Mode array where column 0 is ``enn`` and column 1 is ``ell``.
+
+            Returns
+            -------
+            np.ndarray
+                Array with duplicate (enn, ell) rows removed.
+            """
             enn = data[:, 0]
             ell = data[:, 1]
             new_data = []
@@ -148,18 +177,20 @@ def read_a2z(fname):
 
 
 def read_bgparams(fname):
-    """Read background parameters from apollinaire file. This is used to build
-    background profile independently
-    
+    """Read background parameters from an apollinaire output file.
+
+    Parses the background parameter file produced by apollinaire and converts
+    frequency-related parameters from microHz to Hz.
+
     Parameters
     ----------
-    :fname: File name
-    :type: str
+    fname : str
+        Path to the apollinaire background parameter file.
 
     Returns
     -------
-    :param: background parameters in Hz
-    :type: np.ndarray(ndim=1, dtype=float)
+    param : np.ndarray, shape (N,)
+        Background parameters with frequency entries converted to Hz.
     """
     with open(fname) as f:
         data = f.read().splitlines()

@@ -11,7 +11,20 @@ import h5py
 
 
 def readh5(fname):
-    """Load HDF5 file to dict."""
+    """Load an HDF5 file into a nested Python dictionary.
+
+    Parameters
+    ----------
+    fname : str
+        Path to the HDF5 file.
+
+    Returns
+    -------
+    dict
+        Nested dictionary mirroring the HDF5 group/dataset hierarchy.
+        Scalar datasets are returned as Python scalars; byte strings are
+        decoded to ``str``.
+    """
     def _load(group, path='/'):
         result = {}
         for key in group[path].keys():
@@ -35,16 +48,16 @@ def readh5(fname):
 
 
 def saveh5(fname, dictionary):
-    """Save dict to HDF5 file.
-    
+    """Save a nested Python dictionary to an HDF5 file.
+
     Parameters
     ----------
-    :fname: full filename path 
-    :type: str
-
-    :dictionary: dictionary to be stored in the file
-    :type: dictionary
-
+    fname : str
+        Destination file path.
+    dictionary : dict
+        Arbitrarily nested dictionary. Supported leaf types: ``np.ndarray``,
+        ``list``, ``tuple``, ``str``, ``bytes``, ``int``, ``float``, ``bool``,
+        and ``np.number`` subclasses.
     """
     def _save(d, group, path='/'):
         for key, val in d.items():
@@ -69,12 +82,26 @@ PARAMS = Config('./config.yml')
 
 
 def get_freqlags(refarr, pfilt_list, maxlag=20):
-    # print(f"max frequency lag = {maxlag*dfreq:.2f} muHz")
-    # corr_mat stores the correlation matrix [ell, time_chunk, lag]
-    # corr_mat_gauss stores the gaussian fit [ell, time_chunk, lag]
-    # corr_matarg stores the index corresponding to maximum corr [ell, time_chunk]
-    # corr_matarg_gauss max corr for the gaussian fit [ell, time_chunk]
-    corr_mat = np.zeros((4, 2*maxlag+1))
+    """Compute frequency lags via cross-correlation and Gaussian fitting.
+
+    Parameters
+    ----------
+    refarr : np.ndarray, shape (N,)
+        Reference (observed) power spectrum.
+    pfilt_list : np.ndarray, shape (lmax, N)
+        Matched-filter power spectra for each harmonic degree.
+    maxlag : int, optional
+        Maximum lag index for the cross-correlation window.
+
+    Returns
+    -------
+    corr_mats : tuple of np.ndarray
+        ``(corr_mat, corr_mat_gauss)`` - raw and Gaussian-fitted correlation
+        matrices of shape ``(lmax, 2*maxlag+1)``.
+    corr_args : tuple of np.ndarray
+        ``(corr_matarg, corr_matarg_gauss)`` - lag indices of peak correlation
+        and peak of the Gaussian fit, each of shape ``(lmax,)``.
+    """
     corr_mat_gauss = np.zeros((4, 2*maxlag+1))
     corr_matarg = np.zeros(4)
     corr_matarg_gauss = np.zeros(4)
@@ -96,22 +123,21 @@ def get_freqlags(refarr, pfilt_list, maxlag=20):
 
 
 def gaussian_gfilt(x, mu, fwhm):
-    """Gaussian profile given mean and fwhm
+    """Evaluate a Gaussian profile given a mean and FWHM.
 
     Parameters
     ----------
-    :x: range over which gaussian is computed
-    :type: np.ndarray(ndim=1, dtype=float)
-
-    :mu: location of gaussian peak
-    :type: float
-
-    :fwhm: FWHM of gaussian
-    :type: float
+    x : np.ndarray, shape (N,)
+        Domain over which the Gaussian is evaluated.
+    mu : float
+        Location of the Gaussian peak.
+    fwhm : float
+        Full width at half maximum of the Gaussian (same units as ``x``).
 
     Returns
     -------
-    gaussian profile
+    np.ndarray, shape (N,)
+        Gaussian profile with unit peak amplitude.
     """
     sigma = fwhm / np.sqrt(8. * np.log(2.))
     return np.exp(-(x-mu)**2/2./sigma/sigma)
@@ -190,19 +216,22 @@ def get_pslbg(SPS, visibility_matrix=True, return_nl_list=True):
 
 
 def noisify(iparr):
-    """
-    Noisify the input array with a chi2-2dof distribution
+    """Apply chi-squared (2 d.o.f.) noise to a power spectrum.
+
+    Each frequency bin is multiplied by an independent draw from a
+    chi-squared distribution with 2 degrees of freedom (i.e. the square
+    of a standard-normal variate), as appropriate for an exponentially
+    distributed power spectrum.
 
     Parameters
     ----------
-    :iparr: Input spectra
-    :type: np.ndarray(ndim=1, dtype=float)
+    iparr : np.ndarray
+        Input (model) power spectrum.
 
     Returns
     -------
-    noisy_arr
-    :noisy_arr: noisy counterpart of input spectra
-    :type: np.ndarray(ndim=1, dtype=float)
+    noisy_arr : np.ndarray
+        Noise-realization of the input spectrum, same shape as ``iparr``.
     """
     noise = np.random.randn(*(iparr.shape))**2
     noisy_arr = iparr*noise
@@ -210,78 +239,76 @@ def noisify(iparr):
 
 
 def gaussian(x, *p):
-    """Creates a gaussian with the defined parameters. Useful for 
-    passing the function to scipy.optimize.curve_fit
+    """Evaluate a Gaussian with an additive DC offset.
+
+    Convenience wrapper for use with ``scipy.optimize.curve_fit``.
 
     Parameters
     ----------
-    :x: domain on which gaussian is defined
-    :type: np.ndarray(ndim=1, dtype=float)
+    x : np.ndarray
+        Domain on which the Gaussian is evaluated.
+    *p : float
+        Four parameters ``(A, mu, sigma, k)`` where
 
-    :p: parameters corresponding to the gaussian
-    :type: list(len=4)
-        p[0] = Amplitude of gaussian
-        p[1] = centroid location
-        p[2] = sigma
-        p[3] = dc shift
+        * ``A``     - amplitude,
+        * ``mu``    - centroid,
+        * ``sigma`` - standard deviation,
+        * ``k``     - DC offset.
 
     Returns
     -------
-    gaussian profile on x
+    np.ndarray
+        Gaussian profile on ``x``.
     """
     A, mu, sigma, k = p
     return A*np.exp(-(x-mu)**2/(2.*sigma**2)) + k
 
 
 def lorentzian(x, *p):
-    """Creates a lorentzian with the defined parameters. Useful for 
-    passing the function to scipy.optimize.curve_fit
+    """Evaluate a Lorentzian (Cauchy) profile with an additive DC offset.
+
+    Convenience wrapper for use with ``scipy.optimize.curve_fit``.
 
     Parameters
     ----------
-    :x: domain on which gaussian is defined
-    :type: np.ndarray(ndim=1, dtype=float)
+    x : np.ndarray
+        Domain on which the Lorentzian is evaluated.
+    *p : float
+        Four parameters ``(A, mu, sigma, k)`` where
 
-    :p: parameters corresponding to the lorentzian
-    :type: list(len=4)
-        p[0] = Amplitude of gaussian
-        p[1] = centroid location
-        p[2] = sigma
-        p[3] = dc shift
+        * ``A``     - amplitude,
+        * ``mu``    - centroid,
+        * ``sigma`` - half-width at half maximum,
+        * ``k``     - DC offset.
 
     Returns
     -------
-    lorentzian profile on x
+    np.ndarray
+        Lorentzian profile on ``x``.
     """
     A, mu, sigma, k = p
     return A/(1 + ((x-mu)/sigma)**2) + k
 
 
 def compute_cc(arr1, arr2, maxlag=20):
-    """Computes the cross-correlation for lags in the range (-maxlag, maxlag+1)
+    """Compute the discrete cross-correlation for lags in ``[-maxlag, maxlag]``.
 
     Parameters
     ----------
-    :arr1: the raw power spectrum
-    :type: np.ndarray(ndim=1, dtype=float)
-
-    :arr2: the filter power spectrum model
-    :type: np.ndarray(ndim=1, dtype=float)
-
-    :maxlag: the maximum lag index
-    :type: int
-    :default: 20
+    arr1 : np.ndarray, shape (N,)
+        First signal (e.g. the raw observed power spectrum).
+    arr2 : np.ndarray, shape (N,)
+        Second signal (e.g. the model filter power spectrum).
+    maxlag : int, optional
+        Maximum lag index. The returned lag array spans
+        ``np.arange(-maxlag, maxlag+1)``.
 
     Returns
     -------
-    lags, cc
-
-    :lags: array containing list of lags
-    :type: np.ndarray(ndim=1, dtype=int)
-    :note: lags = np.arange(-maxlag, maxlag+1)
-
-    :cc: cross-correlation array
-    :type: np.ndarray(ndim=1, dtype=float)
+    lags : np.ndarray of int, shape (2*maxlag+1,)
+        Array of integer lag indices.
+    cc : np.ndarray of float, shape (2*maxlag+1,)
+        Cross-correlation values at each lag.
     """
     padded1arr = np.pad(arr1, (maxlag+1, maxlag+1), 'constant', constant_values=(0, 0))
     padded2arr = np.pad(arr2, (maxlag+1, maxlag+1), 'constant', constant_values=(0, 0))
@@ -296,14 +323,36 @@ def compute_cc(arr1, arr2, maxlag=20):
 
 
 def get_freqlags_corrected(refarr, pfilt_list, pexcl_list, fitfunc, maxlag=20):
-    # print(f"max frequency lag = {maxlag*dfreq:.2f} muHz")
-    
-    # corr_mat stores the correlation matrix [ell, time_chunk, lag]
-    # corr_mat_gauss stores the gaussian fit [ell, time_chunk, lag]
-    # corr_matarg stores the index corresponding to maximum corr [ell, time_chunk]
-    # corr_matarg_gauss max corr for the gaussian fit [ell, time_chunk]
-    
-    corr_mat = np.zeros((ARGS.lmax, 2*maxlag+1))
+    """Compute background-corrected frequency lags via cross-correlation.
+
+    The cross-correlation between the filter and the excluded-mode spectrum is
+    subtracted as a background correction before fitting.
+
+    Parameters
+    ----------
+    refarr : np.ndarray, shape (N,)
+        Reference (observed) power spectrum.
+    pfilt_list : np.ndarray, shape (lmax, N)
+        Matched-filter power spectra for each harmonic degree.
+    pexcl_list : np.ndarray, shape (lmax, N)
+        Leakage-correction (excluded-mode) spectra for each harmonic degree.
+    fitfunc : callable
+        Profile function used to fit the cross-correlation peak
+        (e.g. ``gaussian`` or ``lorentzian``).
+    maxlag : int, optional
+        Maximum lag index for the cross-correlation window.
+
+    Returns
+    -------
+    corr_mats : tuple of np.ndarray
+        ``(corr_mat, corr_mat_gauss)`` - raw corrected and fitted correlation
+        matrices of shape ``(lmax, 2*maxlag+1)``.
+    corr_args : tuple of np.ndarray
+        ``(corr_matarg, corr_matarg_gauss)`` - peak-lag indices of shape
+        ``(lmax,)`` from argmax and from the fitted profile.
+    corrbg_list : list of np.ndarray
+        Background cross-correlation array for each harmonic degree.
+    """
     corr_mat_gauss = np.zeros((ARGS.lmax, 2*maxlag+1))
     corr_matarg = np.zeros(ARGS.lmax)
     corr_matarg_gauss = np.zeros(ARGS.lmax)
@@ -329,8 +378,35 @@ def get_freqlags_corrected(refarr, pfilt_list, pexcl_list, fitfunc, maxlag=20):
 
 
 
-def get_freqlags_polyfit(refarr, pfilt_list, pexcl_list, maxlag=20):    
-    corr_mat = np.zeros((ARGS.lmax, 2*maxlag+1))
+def get_freqlags_polyfit(refarr, pfilt_list, pexcl_list, maxlag=20):
+    """Compute background-corrected frequency lags using polynomial peak fitting.
+
+    Fits a degree-5 polynomial to the normalised, background-corrected
+    cross-correlation and locates the peak via ``scipy.optimize.minimize``.
+
+    Parameters
+    ----------
+    refarr : np.ndarray, shape (N,)
+        Reference (observed) power spectrum.
+    pfilt_list : np.ndarray, shape (lmax, N)
+        Matched-filter power spectra for each harmonic degree.
+    pexcl_list : np.ndarray, shape (lmax, N)
+        Leakage-correction (excluded-mode) spectra for each harmonic degree.
+    maxlag : int, optional
+        Maximum lag index for the cross-correlation window.
+
+    Returns
+    -------
+    corr_mats : tuple of np.ndarray
+        ``(corr_mat, corr_mat_pf)`` - normalised corrected cross-correlation
+        and polynomial-fitted cross-correlation, each of shape
+        ``(lmax, 2*maxlag+1)``.
+    corr_args : tuple of np.ndarray
+        ``(corr_matarg, corr_matarg_pf)`` - argmax and polynomial-fit peak
+        positions, each of shape ``(lmax,)``.
+    corrbg_list : list of np.ndarray
+        Background cross-correlation array for each harmonic degree.
+    """
     corr_mat_pf = np.zeros((ARGS.lmax, 2*maxlag+1))
     corr_matarg = np.zeros(ARGS.lmax)
     corr_matarg_pf = np.zeros(ARGS.lmax)
@@ -359,7 +435,33 @@ def get_freqlags_polyfit(refarr, pfilt_list, pexcl_list, maxlag=20):
 
 
 def compute_delnu(pschunks, pfilt_list, pexcl_list, dfreq, maxlag=20, fittype='gaussian'):
-    corr_mat = np.zeros((ARGS.lmax, pschunks.shape[0], 2*maxlag+1))
+    """Compute frequency shifts (delta-nu) for each harmonic degree and time chunk.
+
+    For every time chunk in ``pschunks`` the background-corrected
+    cross-correlation is computed and the peak is located with the requested
+    fitting method, yielding a frequency shift in microHz.
+
+    Parameters
+    ----------
+    pschunks : np.ndarray, shape (T, N)
+        Observed power-spectrum chunks, one per time interval.
+    pfilt_list : np.ndarray, shape (lmax, N)
+        Matched-filter power spectra for each harmonic degree.
+    pexcl_list : np.ndarray, shape (lmax, N)
+        Leakage-correction spectra for each harmonic degree.
+    dfreq : float
+        Frequency resolution in Hz (used to convert lag indices to microHz).
+    maxlag : int, optional
+        Maximum lag index for the cross-correlation window.
+    fittype : {'gaussian', 'lorentzian', 'polynomial'}, optional
+        Profile function used to locate the cross-correlation peak.
+
+    Returns
+    -------
+    domega_muhz : np.ndarray, shape (lmax, T)
+        Frequency shifts in microHz for each (harmonic degree, time chunk)
+        combination.
+    """
     corr_mat_gauss = np.zeros((ARGS.lmax, pschunks.shape[0], 2*maxlag+1))
     corr_matarg = np.zeros((ARGS.lmax, pschunks.shape[0]))
     corr_matarg_gauss = np.zeros((ARGS.lmax, pschunks.shape[0]))
@@ -380,8 +482,38 @@ def compute_delnu(pschunks, pfilt_list, pexcl_list, dfreq, maxlag=20, fittype='g
 
 
 
-def compute_errors_montecarlo(psfit ,pfilt_list, pexcl_list, dfreq, maxlag=20, samples=10000):
-    dom_list = []
+def compute_errors_montecarlo(psfit, pfilt_list, pexcl_list, dfreq, maxlag=20, samples=10000):
+    """Estimate frequency-shift uncertainties via Monte Carlo noise realisations.
+
+    Generates ``samples`` noise realisations of ``psfit`` using
+    :func:`noisify`, computes ``compute_delnu`` for each, and returns the
+    standard deviation across realisations as the uncertainty estimate.
+    Outliers with ``|delta_omega| >= 5 muHz`` are excluded before computing
+    the standard deviation.
+
+    Parameters
+    ----------
+    psfit : np.ndarray, shape (N,)
+        Best-fit (noiseless) model power spectrum.
+    pfilt_list : np.ndarray, shape (lmax, N)
+        Matched-filter power spectra for each harmonic degree.
+    pexcl_list : np.ndarray, shape (lmax, N)
+        Leakage-correction spectra for each harmonic degree.
+    dfreq : float
+        Frequency resolution in Hz.
+    maxlag : int, optional
+        Maximum lag index for the cross-correlation window.
+    samples : int, optional
+        Number of Monte Carlo realisations.
+
+    Returns
+    -------
+    dom_list : np.ndarray, shape (samples, lmax)
+        Frequency shifts for each realisation and harmonic degree.
+    domega_sig : np.ndarray, shape (lmax,)
+        Estimated 1-sigma uncertainty on the frequency shift for each
+        harmonic degree.
+    """
     for idx in tqdm(range(samples), desc='Computing errors using MonteCarlo'):
         _psc = noisify(psfit)
         _dom = compute_delnu(_psc[None, :], pfilt_list, pexcl_list, dfreq, maxlag=maxlag)
@@ -398,11 +530,46 @@ def compute_errors_montecarlo(psfit ,pfilt_list, pexcl_list, dfreq, maxlag=20, s
 
 
 def moving_avg(x, w):
+    """Compute a simple (boxcar) moving average.
+
+    Parameters
+    ----------
+    x : array_like, shape (N,)
+        Input data.
+    w : int
+        Window width.
+
+    Returns
+    -------
+    np.ndarray, shape (N - w + 1,)
+        Moving-average of ``x`` with window ``w``.
+    """
     return np.convolve(x, np.ones(w), 'valid')/w
 
 
 
 def plot_compare(time_arr, dom_santos, derr_santos, dom, derr):
+    """Plot frequency-shift time series comparing this work against Santos et al. (2018).
+
+    Parameters
+    ----------
+    time_arr : np.ndarray, shape (T,)
+        Observation mid-times in days.
+    dom_santos : list of np.ndarray
+        Frequency shifts from Santos et al. (2018) for each harmonic degree.
+    derr_santos : list of np.ndarray
+        Uncertainties on ``dom_santos``.
+    dom : np.ndarray, shape (lmax, T)
+        Frequency shifts from this work.
+    derr : np.ndarray, shape (lmax,)
+        Uncertainty estimates for ``dom``.
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+    axs : np.ndarray of matplotlib.axes.Axes
+        Array of axes, one per harmonic degree.
+    """
     def get_dcs(arr1, arr2):
         _arr1, _arr2 = arr1*1., arr2*1.
         masknan = np.isnan(arr1) + np.isnan(arr2)
@@ -432,6 +599,30 @@ def plot_compare(time_arr, dom_santos, derr_santos, dom, derr):
 
 
 def plot_compare_vertical(time_arr, dom_santos, derr_santos, dom, derr):
+    """Plot frequency-shift time series in a vertical layout.
+
+    Same data as :func:`plot_compare` but with harmonic degrees stacked
+    vertically rather than horizontally.
+
+    Parameters
+    ----------
+    time_arr : np.ndarray, shape (T,)
+        Observation mid-times in days.
+    dom_santos : list of np.ndarray
+        Frequency shifts from Santos et al. (2018) for each harmonic degree.
+    derr_santos : list of np.ndarray
+        Uncertainties on ``dom_santos``.
+    dom : np.ndarray, shape (lmax, T)
+        Frequency shifts from this work.
+    derr : np.ndarray, shape (lmax,)
+        Uncertainty estimates for ``dom``.
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+    axs : np.ndarray of matplotlib.axes.Axes
+        Array of axes, one per harmonic degree.
+    """
     def get_dcs(arr1, arr2):
         _arr1, _arr2 = arr1*1., arr2*1.
         masknan = np.isnan(arr1) + np.isnan(arr2)
@@ -465,9 +656,34 @@ def plot_compare_vertical(time_arr, dom_santos, derr_santos, dom, derr):
 
 
 def plot_cc(psc, psf, pse, tarr, numfitpix=10, fittype='gaussian', dfreq=1.e-6):
-    t0 = tarr[0]
-    dt = tarr[1]-tarr[0]
-    fig, axs = plt.subplots(nrows=1, ncols=3, figsize=(4, 4), sharey=True)
+    """Plot cross-correlation profiles for each time chunk and harmonic degree.
+
+    Stacks background-corrected cross-correlation curves vertically in time,
+    optionally overlaying polynomial or Gaussian fits to the peak.
+
+    Parameters
+    ----------
+    psc : np.ndarray, shape (T, N)
+        Observed power-spectrum chunks.
+    psf : np.ndarray, shape (lmax, N)
+        Matched-filter spectra for each harmonic degree.
+    pse : np.ndarray, shape (lmax, N)
+        Leakage-correction spectra for each harmonic degree.
+    tarr : np.ndarray, shape (T,)
+        Mid-times corresponding to each chunk (used as vertical offsets).
+    numfitpix : int, optional
+        Half-width (in lag bins) of the fitting window around the peak.
+    fittype : {'gaussian', 'polynomial'}, optional
+        Profile used to fit the cross-correlation peak.
+    dfreq : float, optional
+        Frequency resolution in Hz (used to convert lags to microHz on axis).
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+    axs : np.ndarray of matplotlib.axes.Axes
+        Array of axes, one per harmonic degree.
+    """
     for jdx in range(3):
         for idx in range(len(psc)):
             shifty = dt*idx
@@ -498,9 +714,35 @@ def plot_cc(psc, psf, pse, tarr, numfitpix=10, fittype='gaussian', dfreq=1.e-6):
 
 
 def plot2cc(psc, psf, pse, tarr, numfitpix=10, fittype='gaussian', dfreq=1.e-6):
-    t0 = tarr[0]
-    dt = tarr[1]-tarr[0]
-    fig, axs = plt.subplots(nrows=1, ncols=3, figsize=(10, 2.5), sharey=True)
+    """Plot cross-correlation profiles with frequency lag on the vertical axis.
+
+    Like :func:`plot_cc` but transposes the axes so that the frequency lag
+    appears on the y-axis and time (correlation amplitude) on the x-axis,
+    also marking the fitted peak position for each chunk.
+
+    Parameters
+    ----------
+    psc : np.ndarray, shape (T, N)
+        Observed power-spectrum chunks.
+    psf : np.ndarray, shape (lmax, N)
+        Matched-filter spectra for each harmonic degree.
+    pse : np.ndarray, shape (lmax, N)
+        Leakage-correction spectra for each harmonic degree.
+    tarr : np.ndarray, shape (T,)
+        Mid-times corresponding to each chunk (used as horizontal offsets).
+    numfitpix : int, optional
+        Half-width (in lag bins) of the fitting window around the peak.
+    fittype : {'gaussian', 'polynomial'}, optional
+        Profile used to fit the cross-correlation peak.
+    dfreq : float, optional
+        Frequency resolution in Hz (used to convert lags to microHz on axis).
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+    axs : np.ndarray of matplotlib.axes.Axes
+        Array of axes, one per harmonic degree.
+    """
     for jdx in range(3):
         for idx in range(len(psc)):
             shifty = dt*idx
