@@ -76,10 +76,10 @@ def gaussian(x, mu, fwhm):
 def get_star_params():
     sparams = pd.read_csv('./data/starparams.csv')
     mask = sparams['kic']==ARGS.kic
-    dnu = sparams[mask]['dnu'][0]
-    r   = sparams[mask]['r'][0]
-    m   = sparams[mask]['m'][0]
-    teff = sparams[mask]['teff'][0]
+    dnu = sparams[mask]['dnu'].values[0]
+    r   = sparams[mask]['r'].values[0]
+    m   = sparams[mask]['m'].values[0]
+    teff = sparams[mask]['teff'].values[0]
     return dnu, r, m, teff
 
 
@@ -195,7 +195,7 @@ if __name__ == "__main__":
                                         quickfit=False, 
                                         fit_angle=True,
                                         discard_pkb=int(0.75*ARGS.Nmcmc), 
-                                        progress=False,
+                                        progress=True,
                                         nwalkers=50,
                                         a2z_file=f'{peakbagdir}/modes_param.a2z',
                                         format_cornerplot='png',

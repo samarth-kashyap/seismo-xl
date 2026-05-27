@@ -23,6 +23,7 @@ dependencies = [
     "pandas>=1.4",
     "tqdm>=4.60",
     "astropy>=5.0",
+    "ritzlavelypy",
 ]
 
 [project.optional-dependencies]
@@ -30,11 +31,9 @@ dev = [
     "jupyter>=1.0",
     "ipykernel>=6.0",
 ]
-peakbag = [
-    "apollinaire>=0.1",
-]
 all = [
-    "seismo-xl[dev,peakbag]",
+    "seismo-xl[dev]",
+    "apollinaire>=0.1",
 ]
 
 [project.urls]
@@ -46,3 +45,6 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "*" = ["*.yml", "*.yaml"]
+
+[tool.uv.sources]
+ritzlavelypy = { git = "https://github.com/samarth-kashyap/ritzLavelyPy" }

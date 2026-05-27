@@ -35,7 +35,17 @@ def readh5(fname):
 
 
 def saveh5(fname, dictionary):
-    """Save dict to HDF5 file."""
+    """Save dict to HDF5 file.
+    
+    Parameters
+    ----------
+    :fname: full filename path 
+    :type: str
+
+    :dictionary: dictionary to be stored in the file
+    :type: dictionary
+
+    """
     def _save(d, group, path='/'):
         for key, val in d.items():
             fp = f"{path}/{key}" if path != '/' else f"/{key}"
@@ -531,8 +541,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Process some integers.')
     parser.add_argument('--kic', type=int, default=8006161, help='Kepler KIC')
     parser.add_argument('--lmax', type=int, default=3, help='Max ell observed in data')
-    parser.add_argument('--Navg', type=int, default=90 ,help='Length of sub-series (days)')
-    parser.add_argument('--Nshift', type=int, default=15, help='Shift between sub-series (days)')
+    parser.add_argument('--Navg', type=int, default=180,help='Length of sub-series (days)')
+    parser.add_argument('--Nshift', type=int, default=45, help='Shift between sub-series (days)')
     parser.add_argument('--inclang', type=float, default=45., help='Inclination angle')
     parser.add_argument('--freqmin', type=float, default=0.5, help='Minimum freq in mHz')
     parser.add_argument('--freqmax', type=float, default=5.5, help='Maximum freq in mHz')
@@ -573,7 +583,7 @@ if __name__ == "__main__":
     rot_period = 31.71*day2sec # days (A&A 682, A67, 2024 - Breton, Lanza, Messina)
     a1rot = 1/rot_period
     pschunks = obsdata['pschunks']*nhz2hz
-    fref = obsdata['freq']
+    fref = np.array(obsdata['freq'])
     cond = obsdata['fmask']
     fref = fref[cond]
     pschunks = pschunks[:, cond]
@@ -676,17 +686,22 @@ if __name__ == "__main__":
         domega_muhz_santos.append(pbobs)
         domega_err_santos.append(pbobse)
 
+    sig_ratio = domega_err_santos/domega_sig[:, None]
+    sig_ratio_mean = np.mean(sig_ratio, axis=1)
+    sig_ratio_std = np.std(sig_ratio, axis=1)
+    print(f" Sigma ratio: mean = {sig_ratio_mean} ± {sig_ratio_std}")
     fig, axs = plot_compare(time_arr, domega_muhz_santos, domega_err_santos, domega1muhz, domega_sig)
     fig.savefig(f'{papers_dir}/delnu1-comparison-{kicstr}.png')
-    plt.show(fig)
+    plt.close(fig)
 
     fig, axs = plot_compare(time_arr, domega_muhz_santos, domega_err_santos, domega2muhz, domega_sig)
     fig.savefig(f'{papers_dir}/delnu2-comparison-{kicstr}.png')
-    plt.show(fig)
+    plt.close(fig)
 
     fig, axs = plot_compare(time_arr, domega_muhz_santos, domega_err_santos, domega3muhz, domega_sig)
     fig.savefig(f'{papers_dir}/delnu3-comparison-{kicstr}.png')
-    plt.show(fig)
+    plt.close(fig)
 
     fig, axs = plot_cc(pschunks, pfilt_list, pexcl_list, time_arr, fittype='polynomial', dfreq=dfreq)
     fig.savefig(f'{papers_dir}/ccfit-{kicstr}.png')
+    plt.close(fig)

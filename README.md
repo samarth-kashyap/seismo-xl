@@ -25,25 +25,27 @@ The pipeline:
 ### Using uv (recommended)
 
 ```bash
-# Create virtual environment
-uv venv
+# Create virtual environment with Python 3.13
+uv venv --python 3.13
 
 # Activate
 source .venv/bin/activate
 
 # Install seismo-xl in editable mode
-uv pip install -e ".[dev]"
+uv sync
 
-# With peakbagging support (apollinaire):
-uv pip install -e ".[peakbag]"
+# With peakbagging + notebooks (apollinaire, jupyter):
+uv sync --all-extras
 ```
 
 ### Using pip + venv
 
 ```bash
-python -m venv .venv
+python3.13 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
+# With peakbagging:
+pip install -e ".[all]"
 ```
 
 ## Usage
@@ -140,6 +142,7 @@ All hardcoded scratch paths have been replaced with configurable CLI arguments o
 | `compute_delnu.py` | `--output-dir` | `config.yml` → `output_dir` | Base dir for processed data |
 | `compute_delnu.py` | `--papers-dir` | `{output_dir}/papers` | Where paper figures are saved |
 | `create_spectra.py` | `--scratch-dir` | `/path/to/sun-intg` | Base dir for synthetic spectra |
+| `create_spectra.py` | `--obs-dir` | *(required)* | Dir with `Larson_Schou_MDI_2015.dat` for ref mode params |
 
 **Package-level paths** (`.config` file in repo root, one path per line):
 

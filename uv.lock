@@ -4167,6 +4167,19 @@ wheels = [
 ]
 
 [[package]]
+name = "ritzlavelypy"
+version = "1.0.0"
+source = { git = "https://github.com/samarth-kashyap/ritzLavelyPy#a716a4bfaf391d4e8c9c89a1ab3fc77cebd53cc5" }
+dependencies = [
+    { name = "numpy", version = "1.26.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.10.*'" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "scipy", version = "1.13.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
+    { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.10.*'" },
+    { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+]
+
+[[package]]
 name = "rpds-py"
 version = "0.27.1"
 source = { registry = "https://pypi.org/simple" }
@@ -4658,6 +4671,7 @@ dependencies = [
     { name = "pyshtools", version = "4.13.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
     { name = "pyshtools", version = "4.14.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
     { name = "pyyaml" },
+    { name = "ritzlavelypy" },
     { name = "scipy", version = "1.13.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
     { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.10.*'" },
     { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
@@ -4676,13 +4690,10 @@ dev = [
     { name = "ipykernel", version = "7.2.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
     { name = "jupyter" },
 ]
-peakbag = [
-    { name = "apollinaire" },
-]
 
 [package.metadata]
 requires-dist = [
-    { name = "apollinaire", marker = "extra == 'peakbag'", specifier = ">=0.1" },
+    { name = "apollinaire", marker = "extra == 'all'", specifier = ">=0.1" },
     { name = "astropy", specifier = ">=5.0" },
     { name = "h5py", specifier = ">=3.6" },
     { name = "ipykernel", marker = "extra == 'dev'", specifier = ">=6.0" },
@@ -4692,11 +4703,12 @@ requires-dist = [
     { name = "pandas", specifier = ">=1.4" },
     { name = "pyshtools", specifier = ">=4.10" },
     { name = "pyyaml", specifier = ">=6.0" },
+    { name = "ritzlavelypy", git = "https://github.com/samarth-kashyap/ritzLavelyPy" },
     { name = "scipy", specifier = ">=1.7" },
-    { name = "seismo-xl", extras = ["dev", "peakbag"], marker = "extra == 'all'" },
+    { name = "seismo-xl", extras = ["dev"], marker = "extra == 'all'" },
     { name = "tqdm", specifier = ">=4.60" },
 ]
-provides-extras = ["dev", "peakbag", "all"]
+provides-extras = ["dev", "all"]
 
 [[package]]
 name = "send2trash"

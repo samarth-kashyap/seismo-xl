@@ -6,6 +6,7 @@ __authors__ = ["samarth-kashyap"]
 # Loading python modules
 import logging
 import numpy as np
+from scipy.special import factorial
 from pyshtools import legendre
 from ritzLavelyPy.rlclass import ritzLavelyPoly
 
@@ -225,8 +226,8 @@ class visibilityMatrix(stellarPS):
         pval = _Plm[_idx]
         lpm = ell + abs(emm)
         lmm = ell - abs(emm)
-        lpmf = np.math.factorial(lpm)
-        lmmf = np.math.factorial(lmm)
+        lpmf = factorial(lpm)
+        lmmf = factorial(lmm)
         pval = pval * np.sqrt(lmmf/lpmf)
         elm = pval**2
         return elm
