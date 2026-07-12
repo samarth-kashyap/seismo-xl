@@ -1,0 +1,52 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "seismo-xl"
+version = "0.1.0"
+description = "Measure frequency shifts in solar-like oscillators using filtered cross-correlation"
+authors = [
+    {name = "Samarth Kashyap", email = "kashyap@mps.mpg.de"},
+]
+license = "MIT"
+readme = "README.md"
+requires-python = ">=3.9"
+
+dependencies = [
+    "numpy>=1.22",
+    "scipy>=1.7",
+    "matplotlib>=3.5",
+    "pyyaml>=6.0",
+    "pyshtools>=4.10",
+    "h5py>=3.6",
+    "pandas>=1.4",
+    "tqdm>=4.60",
+    "astropy>=5.0",
+    "ritzlavelypy",
+]
+
+[project.optional-dependencies]
+dev = [
+    "jupyter>=1.0",
+    "ipykernel>=6.0",
+]
+all = [
+    "seismo-xl[dev]",
+    "apollinaire>=0.1",
+]
+
+[project.urls]
+Repository = "https://github.com/samarth-kashyap/seismo-xl"
+Documentation = "https://github.com/samarth-kashyap/seismo-xl#readme"
+Issues = "https://github.com/samarth-kashyap/seismo-xl/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["seismo_xl", "seismo_xl.*"]
+
+[tool.setuptools.package-data]
+"*" = ["*.yml", "*.yaml"]
+
+[tool.uv.sources]
+ritzlavelypy = { git = "https://github.com/samarth-kashyap/ritzLavelyPy" }

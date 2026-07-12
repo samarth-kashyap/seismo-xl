@@ -8,8 +8,27 @@ import apollinaire as apn
 from scipy.interpolate import interp1d
 
 # Local imports
-from sgkutils import saveh5
-from src.config import Config
+import h5py
+
+
+def saveh5(fname, dictionary):
+    """Save dict to HDF5 file."""
+    def _save(d, group, path='/'):
+        for key, val in d.items():
+            fp = f"{path}/{key}" if path != '/' else f"/{key}"
+            if isinstance(val, dict):
+                _save(val, group, fp)
+            elif isinstance(val, (np.ndarray, list, tuple)):
+                group.create_dataset(fp, data=np.array(val))
+            elif isinstance(val, (str, bytes)):
+                group.create_dataset(fp, data=np.bytes_(val))
+            elif isinstance(val, (int, float, bool, np.number)):
+                group.create_dataset(fp, data=val)
+            else:
+                raise TypeError(f"Unsupported type {type(val)} for key {key}")
+    with h5py.File(fname, 'w') as f:
+        _save(dictionary, f)
+from seismo_xl.config import Config
 PARAMS = Config('./config.yml')
 
 parser = argparse.ArgumentParser()
@@ -57,10 +76,10 @@ def gaussian(x, mu, fwhm):
 def get_star_params():
     sparams = pd.read_csv('./data/starparams.csv')
     mask = sparams['kic']==ARGS.kic
-    dnu = sparams[mask]['dnu'][0]
-    r   = sparams[mask]['r'][0]
-    m   = sparams[mask]['m'][0]
-    teff = sparams[mask]['teff'][0]
+    dnu = sparams[mask]['dnu'].values[0]
+    r   = sparams[mask]['r'].values[0]
+    m   = sparams[mask]['m'].values[0]
+    teff = sparams[mask]['teff'].values[0]
     return dnu, r, m, teff
 
 
@@ -176,7 +195,7 @@ if __name__ == "__main__":
                                         quickfit=False, 
                                         fit_angle=True,
                                         discard_pkb=int(0.75*ARGS.Nmcmc), 
-                                        progress=False,
+                                        progress=True,
                                         nwalkers=50,
                                         a2z_file=f'{peakbagdir}/modes_param.a2z',
                                         format_cornerplot='png',

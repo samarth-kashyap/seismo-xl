@@ -6,12 +6,11 @@ import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
 
 # Local imports
-from src.globalvars import globalVars
-from stellarspec import stellarPS
+from seismo_xl.globalvars import globalVars
+from seismo_xl.stellarspec import stellarPS
 
 # Defining some global variables
 GVARS = globalVars()
-ELLS, ENNS, NUS, FWHMS, SIG_FWHMS = GVARS.load_data()
 
 #--------------------- ARGUMENT PARSER ---------------------------------
 parser = argparse.ArgumentParser(description='Process some integers.')
@@ -25,6 +24,10 @@ parser.add_argument('--ndays', type=float, default=72, help='Number of observati
 parser.add_argument('--realizations', type=np.int32, default=1000, help='Realizations for MonteCarlo')
 parser.add_argument('--freqmin', type=float, default=0.5, help='Minimum freq in mHz')
 parser.add_argument('--freqmax', type=float, default=5.5, help='Maximum freq in mHz')
+parser.add_argument('--scratch-dir', type=str, default='/scratch/seismo/kashyap/processed/sun-intg',
+                    help='Base directory for data and fits (default: /scratch/.../sun-intg)')
+parser.add_argument('--obs-dir', type=str, default=None,
+                    help='Directory with Larson_Schou_MDI_2015.dat reference data')
 ARGS = parser.parse_args()
 #----------------------------------------------------------------------------
 
@@ -33,26 +36,30 @@ assert ARGS.freqmax>0. and ARGS.freqmax<10., "Max freq out of range"
 assert ARGS.freqmax>ARGS.freqmin, "maxfreq < minfreq; exiting"
 
 
-scratch_dir = f"/scratch/seismo/kashyap/processed/sun-intg"
+scratch_dir = ARGS.scratch_dir
+
+# Load reference mode parameters
+ELLS, ENNS, NUS, FWHMS, SIG_FWHMS = GVARS.load_data(obs_dir=ARGS.obs_dir)
 data_dir = f"{scratch_dir}/data/{ARGS.source}-{ARGS.channel}-Ncarr{ARGS.Ncarr}-skip{ARGS.skipmax:02d}"
 fits_dir = f"{scratch_dir}/ps-fits/{ARGS.source}-{ARGS.channel}-Ncarr{ARGS.Ncarr}-skip{ARGS.skipmax:02d}-ell{ARGS.lmax}-i{ARGS.inclang:02d}"
 
 
 def filter_butterworth_bandpass(_f1, tt1, forder=12,):
-    """Applying butterworth filter to the observed spectra.
+    """Apply a low-pass Butterworth filter to a time series.
 
     Parameters
     ----------
-    :_f1: Frequency array
-    :type: np.ndarray(ndim=1, dtype=np.float64)
-
-    :tt1: Travel-time array
-    :type: np.ndarray(ndim=1, dtype=np.float64)
+    _f1 : np.ndarray, shape (N,)
+        Frequency array corresponding to ``tt1`` in Hz.
+    tt1 : np.ndarray, shape (N,)
+        Input time series (or spectrum) to be filtered.
+    forder : int, optional
+        Order of the Butterworth filter.
 
     Returns
     -------
-    :tt1_filtered: Filtered travel-time array
-    :type: np.ndarray(ndim=1, dtype=np.float64)
+    tt1_filtered : np.ndarray, shape (N,)
+        Filtered version of ``tt1``.
     """
     freqmin = ARGS.freqmin*1e-3
     freqmax = ARGS.freqmax*1e-3
@@ -63,13 +70,26 @@ def filter_butterworth_bandpass(_f1, tt1, forder=12,):
 
 
 def get_freqlags(refarr, pfilt_list, maxlag=20):
-    # print(f"max frequency lag = {maxlag*dfreq:.2f} muHz")
-    
-    # corr_mat stores the correlation matrix [ell, time_chunk, lag]
-    # corr_mat_gauss stores the gaussian fit [ell, time_chunk, lag]
-    # corr_matarg stores the index corresponding to maximum corr [ell, time_chunk]
-    # corr_matarg_gauss max corr for the gaussian fit [ell, time_chunk]
-    
+    """Compute frequency lags via cross-correlation and Gaussian fitting.
+
+    Parameters
+    ----------
+    refarr : np.ndarray, shape (N,)
+        Reference (observed) power spectrum.
+    pfilt_list : np.ndarray, shape (4, N)
+        Matched-filter power spectra for harmonic degrees 0-3.
+    maxlag : int, optional
+        Maximum lag index for the cross-correlation window.
+
+    Returns
+    -------
+    corr_mats : tuple of np.ndarray
+        ``(corr_mat, corr_mat_gauss)`` - raw and Gaussian-fitted correlation
+        matrices of shape ``(4, 2*maxlag+1)``.
+    corr_args : tuple of np.ndarray
+        ``(corr_matarg, corr_matarg_gauss)`` - peak-lag indices from argmax
+        and from the Gaussian fit, each of shape ``(4,)``.
+    """
     corr_mat = np.zeros((4, 2*maxlag+1))
     corr_mat_gauss = np.zeros((4, 2*maxlag+1))
     corr_matarg = np.zeros(4)
@@ -92,24 +112,32 @@ def get_freqlags(refarr, pfilt_list, maxlag=20):
 
 
 def get_freqlags_corrected(refarr, pfilt_list, pexcl_list, maxlag=20):
-    """Compute frequecy lags
+    """Compute background-corrected frequency lags via cross-correlation.
+
+    The leakage-correction (excluded-mode) cross-correlation is subtracted
+    from the filter cross-correlation before fitting with a Gaussian.
 
     Parameters
     ----------
-    :refarr: Observed power spectrum
-    :type: np.ndarray(ndim=1, dtype=float)[freq]
-
-    :pfilt_list: List of MI filters for different ell
-    :type: np.ndarray(ndim=2, dtype=float)[ell, freq]
-
-    :pexcl_list: List of LC filters for different ell
-    :type: np.ndarray(ndim=2, dtype=float)[ell, freq]
-
-    :maxlag: Maximum number of indices for which cross-correlation is computed
-    :type: int
+    refarr : np.ndarray, shape (N,)
+        Reference (observed) power spectrum.
+    pfilt_list : np.ndarray, shape (4, N)
+        Matched-filter power spectra for harmonic degrees 0-3.
+    pexcl_list : np.ndarray, shape (4, N)
+        Leakage-correction (excluded-mode) spectra for harmonic degrees 0-3.
+    maxlag : int, optional
+        Maximum lag index for the cross-correlation window.
 
     Returns
     -------
+    corr_mats : tuple of np.ndarray
+        ``(corr_mat, corr_mat_gauss)`` - background-corrected and
+        Gaussian-fitted correlation matrices of shape ``(4, 2*maxlag+1)``.
+    corr_args : tuple of np.ndarray
+        ``(corr_matarg, corr_matarg_gauss)`` - peak-lag indices from argmax
+        and from the Gaussian fit, each of shape ``(4,)``.
+    corrbg_list : list of np.ndarray
+        Background cross-correlation for each harmonic degree.
     """
     # print(f"max frequency lag = {maxlag*dfreq:.2f} muHz")
     # corr_mat stores the correlation matrix [ell, time_chunk, lag]
@@ -148,57 +176,60 @@ def get_freqlags_corrected(refarr, pfilt_list, pexcl_list, maxlag=20):
 
 
 def gaussian_gfilt(x, mu, fwhm):
-    """Gaussian profile given mean and fwhm
+    """Evaluate a Gaussian profile given a mean and FWHM.
 
     Parameters
     ----------
-    :x: range over which gaussian is computed
-    :type: np.ndarray(ndim=1, dtype=float)
-
-    :mu: location of gaussian peak
-    :type: float
-
-    :fwhm: FWHM of gaussian
-    :type: float
+    x : np.ndarray, shape (N,)
+        Domain over which the Gaussian is evaluated.
+    mu : float
+        Location of the Gaussian peak.
+    fwhm : float
+        Full width at half maximum (same units as ``x``).
 
     Returns
     -------
-    gaussian profile
+    np.ndarray, shape (N,)
+        Gaussian profile with unit peak amplitude.
     """
     sigma = fwhm / np.sqrt(8. * np.log(2.))
     return np.exp(-(x-mu)**2/2./sigma/sigma)
 
 
 def get_pslbg(SPS, visibility_matrix=True, return_nl_list=True):
-    """Get the components of power spectrum. The power-spectrum is modelled as a linear combination
-    of the following components.
-    (1) Lorentzians for the modes
-    (2) Harvey-like profiles for the background
-    (3) Photon-noise
+    """Construct the list of power-spectrum components for the model fit.
 
-    This function returns a list psl_bg, where each element of the list corresponds to the
-    power-spectrum of the above 3 components.
+    The total power spectrum is modelled as a linear combination of:
+
+    1. Lorentzians for each (n, ell, m) mode.
+    2. Harvey-like profiles for the granulation background.
+    3. Photon noise (white noise floor).
 
     Parameters
     ----------
-    :SPS: instance of class src.model.cross_covariance.stellarPS
-    :type: stellarPS
-
-    :visibility_matrix: Set True to include corrections due to visibility matrix
-    :type: bool (default: True)
-
-    :return_nl_list: flag for returning list of enn and ell
-    :type: bool (default: True)
+    SPS : stellarPS
+        Configured instance of :class:`src.stellarspec.stellarPS`.
+    visibility_matrix : bool, optional
+        If ``True``, apply geometrical visibility corrections to mode heights.
+    return_nl_list : bool, optional
+        If ``True``, also return per-mode metadata lists.
 
     Returns
     -------
-    :psl_bg: Each element of the list is either a Lorentzian for a specific (n, ell, m)
-             combination or either of the background terms (2, 3) mentioned above.
-    :type: list[np.ndarray(ndim=1)]
-
-    :fmhz: The frequency bins for which the power spectrum is constructed.
-    :type: np.ndarray(ndim=1)
-    :unit: mHz
+    psdict : tuple
+        ``(psl_bg, ps_nlm_dict)`` where ``psl_bg`` is an ``np.ndarray`` of
+        shape ``(n_components, N_freq)`` and ``ps_nlm_dict`` is a dict
+        mapping ``'ell-enn'`` keys to per-m Lorentzian lists.
+    fmhz : np.ndarray, shape (N_freq,)
+        Frequency bins in mHz.
+    enn_list : list of int
+        Radial orders (only when ``return_nl_list`` is ``True``).
+    ell_list : list of int
+        Harmonic degrees (only when ``return_nl_list`` is ``True``).
+    nu_list : list of float
+        Mode frequencies in Hz (only when ``return_nl_list`` is ``True``).
+    gamma_list : list of float
+        Mode line-widths in Hz (only when ``return_nl_list`` is ``True``).
     """
     fmhz = SPS.nu_plus * 1e3
 
@@ -248,19 +279,21 @@ def get_pslbg(SPS, visibility_matrix=True, return_nl_list=True):
 
 
 def noisify(iparr):
-    """
-    Noisify the input array with a chi2-2dof distribution
+    """Apply chi-squared (2 d.o.f.) noise to a power spectrum.
+
+    Each frequency bin is multiplied by an independent draw from a
+    chi-squared distribution with 2 degrees of freedom, as appropriate for
+    an exponentially distributed power spectrum.
 
     Parameters
     ----------
-    :iparr: Input spectra
-    :type: np.ndarray(ndim=1, dtype=float)
+    iparr : np.ndarray
+        Input (model) power spectrum.
 
     Returns
     -------
-    noisy_arr
-    :noisy_arr: noisy counterpart of input spectra
-    :type: np.ndarray(ndim=1, dtype=float)
+    noisy_arr : np.ndarray
+        Noise realisation of the input spectrum, same shape as ``iparr``.
     """
     noise = np.random.randn(*(iparr.shape))**2
     noisy_arr = iparr*noise
@@ -268,54 +301,50 @@ def noisify(iparr):
 
 
 def gaussian(x, *p):
-    """Creates a gaussian with the defined parameters. Useful for 
-    passing the function to scipy.optimize.curve_fit
+    """Evaluate a Gaussian with an additive DC offset.
+
+    Convenience wrapper for use with ``scipy.optimize.curve_fit``.
 
     Parameters
     ----------
-    :x: domain on which gaussian is defined
-    :type: np.ndarray(ndim=1, dtype=float)
+    x : np.ndarray
+        Domain on which the Gaussian is evaluated.
+    *p : float
+        Four parameters ``(A, mu, sigma, k)`` where
 
-    :p: parameters corresponding to the gaussian
-    :type: list(len=4)
-        p[0] = Amplitude of gaussian
-        p[1] = centroid location
-        p[2] = sigma
-        p[3] = dc shift
+        * ``A``     - amplitude,
+        * ``mu``    - centroid,
+        * ``sigma`` - standard deviation,
+        * ``k``     - DC offset.
 
     Returns
     -------
-    gaussian profile on x
+    np.ndarray
+        Gaussian profile on ``x``.
     """
     A, mu, sigma, k = p
     return A*np.exp(-(x-mu)**2/(2.*sigma**2)) + k
 
 
 def compute_cc(arr1, arr2, maxlag=20):
-    """Computes the cross-correlation for lags in the range (-maxlag, maxlag+1)
+    """Compute the discrete cross-correlation for lags in ``[-maxlag, maxlag]``.
 
     Parameters
     ----------
-    :arr1: the raw power spectrum
-    :type: np.ndarray(ndim=1, dtype=float)
-
-    :arr2: the filter power spectrum model
-    :type: np.ndarray(ndim=1, dtype=float)
-
-    :maxlag: the maximum lag index
-    :type: int
-    :default: 20
+    arr1 : np.ndarray, shape (N,)
+        First signal (e.g. the raw observed power spectrum).
+    arr2 : np.ndarray, shape (N,)
+        Second signal (e.g. the model filter power spectrum).
+    maxlag : int, optional
+        Maximum lag index. The returned lag array spans
+        ``np.arange(-maxlag, maxlag+1)``.
 
     Returns
     -------
-    lags, cc
-
-    :lags: array containing list of lags
-    :type: np.ndarray(ndim=1, dtype=int)
-    :note: lags = np.arange(-maxlag, maxlag+1)
-
-    :cc: cross-correlation array
-    :type: np.ndarray(ndim=1, dtype=float)
+    lags : np.ndarray of int, shape (2*maxlag+1,)
+        Array of integer lag indices.
+    cc : np.ndarray of float, shape (2*maxlag+1,)
+        Cross-correlation values at each lag.
     """
     padded1arr = np.pad(arr1, (maxlag+1, maxlag+1), 'constant', constant_values=(0, 0))
     padded2arr = np.pad(arr2, (maxlag+1, maxlag+1), 'constant', constant_values=(0, 0))
@@ -330,8 +359,30 @@ def compute_cc(arr1, arr2, maxlag=20):
 
 
 def compute_delnu(pmod_list, pfilt_list, pexcl_list, corrected=False):
-    # Computing delnu with correction factor
-    collect0fitval = []
+    """Estimate frequency shifts via Monte Carlo for each harmonic degree.
+
+    Generates ``ARGS.realizations`` noise realisations of each per-ell model
+    spectrum and computes the cross-correlation peak position for each,
+    collecting the Gaussian-fit centroid as the frequency-shift estimate.
+
+    Parameters
+    ----------
+    pmod_list : list of np.ndarray
+        Per-ell model power spectra ``[pmod0, pmod1, pmod2, pmod3]``.
+    pfilt_list : np.ndarray, shape (4, N)
+        Matched-filter spectra for harmonic degrees 0-3.
+    pexcl_list : np.ndarray, shape (4, N)
+        Leakage-correction spectra for harmonic degrees 0-3.
+    corrected : bool, optional
+        If ``True``, apply the background (leakage) correction via
+        :func:`get_freqlags_corrected`; otherwise use :func:`get_freqlags`.
+
+    Returns
+    -------
+    collect0fitval, collect1fitval, collect2fitval, collect3fitval : np.ndarray
+        Arrays of Gaussian-fit centroids (in lag-index units) for each of
+        the four harmonic degrees across all Monte Carlo realisations.
+    """
     collect1fitval = []
     collect2fitval = []
     collect3fitval = []
@@ -364,6 +415,19 @@ def compute_delnu(pmod_list, pfilt_list, pexcl_list, corrected=False):
 
 
 def testfunc():
+    """Run a quick Monte Carlo test using module-level shifted spectra.
+
+    Uses the globally-defined ``pmod0s``-``pmod3s`` (shifted model spectra)
+    and ``pfilt_list`` to compute Gaussian-fit frequency-shift centroids for
+    ``ARGS.realizations`` noise realisations, then plots histograms.
+
+    Returns
+    -------
+    collect0fitval, collect1fitval, collect2fitval, collect3fitval : np.ndarray
+        Gaussian-fit centroids (lag-index units) for harmonic degrees 0-3.
+    fig : matplotlib.figure.Figure
+    axs : matplotlib.axes.Axes
+    """
     collect0fitval = []
     collect1fitval = []
     collect2fitval = []
@@ -424,7 +488,7 @@ if __name__ == "__main__":
     bgamps = np.load(f'{fits_dir}/fitted-mode-amplitudes-mod.npy')[-2:]
     kth = np.load(f'{fits_dir}/numean-kernels.npy')
     years = np.load(f'{data_dir}/years.npy')
-    bsp = np.load('/scratch/seismo/kashyap/processed/sun-intg/bsp-basis/bsp_knotnum_15.npy')
+    bsp = np.load(f'{scratch_dir}/bsp-basis/bsp_knotnum_15.npy')
     amps_llk[-2:] = bgamps
     amps_llk = amps*1.0
 

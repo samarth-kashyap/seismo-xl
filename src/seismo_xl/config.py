@@ -40,9 +40,10 @@ class Loader(yaml.Loader, metaclass=LoaderMeta):
 
 
 class DictAsMember(dict):
-    """Dict as member trick."""
+    """Dict subclass that exposes keys as attribute access."""
 
     def __getattr__(self, name):
+        """Return the value for ``name``, wrapping nested dicts in DictAsMember."""
         value = self[name]
         if isinstance(value, dict):
             value = DictAsMember(value)
@@ -73,6 +74,13 @@ class Config(dict):
     """
 
     def __init__(self, filename=None):
+        """Load configuration from a YAML file.
+
+        Parameters
+        ----------
+        filename : str
+            Path to the YAML configuration file. The file must exist.
+        """
         assert os.path.exists(filename), "ERROR: Config File doesn't exist."
         try:
             with open(filename, 'r') as f:
@@ -85,12 +93,27 @@ class Config(dict):
         print(''.center(80, '-'))
 
     def __getattr__(self, name):
+        """Return the config value for ``name``, wrapping nested dicts in DictAsMember."""
         value = self._cfg_dict[name]
         if isinstance(value, dict):
             value = DictAsMember(value)
         return value
 
     def show(self, cfg_dict=None, indent=0):
+        """Recursively print configuration key-value pairs to stdout.
+
+        Parameters
+        ----------
+        cfg_dict : dict or None, optional
+            Sub-dictionary to display. Defaults to the top-level config.
+        indent : int, optional
+            Current indentation level (used for recursive calls).
+
+        Returns
+        -------
+        int
+            Updated indentation level after printing the current level.
+        """
         if cfg_dict is None:
             cfg_dict = self._cfg_dict
         for key in cfg_dict:

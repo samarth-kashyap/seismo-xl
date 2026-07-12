@@ -1,11 +1,51 @@
-.config
-.ipynb_checkpoints
-__pycache__
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg-info/*
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Data
+data/
+.venv/
+*.h5
+*.hdf5
+*.npy
+*.npz
+*.dat
+*.csv
+
+# Outputs
 mcmc*
 modes*
-*.dat
-*.png
-data
-temp_pysyd
-logs
+logs/
+temp_pysyd/
+
+# Config & machine-specific
+.config
 *.slurm
+
+# Images
+*.png
+*.jpg
+*.pdf
+
+# IDE / editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+dist/
+build/
+
+# pi agent
+.pi/
