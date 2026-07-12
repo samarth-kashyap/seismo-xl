@@ -9,7 +9,7 @@ description = "Measure frequency shifts in solar-like oscillators using filtered
 authors = [
     {name = "Samarth Kashyap", email = "samarth.kashyap@physics.uu.se"},
 ]
-license = {text = "MIT"}
+license = "MIT"
 readme = "README.md"
 requires-python = ">=3.9"
 
