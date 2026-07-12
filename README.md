@@ -1,5 +1,20 @@
 # seismo-xl
 
+<p align="center">
+  <a href="https://pypi.org/project/seismo-xl/">
+    <img src="https://img.shields.io/pypi/v/seismo-xl.svg?style=flat-square" alt="PyPI version">
+  </a>
+  <a href="https://pypi.org/project/seismo-xl/">
+    <img src="https://img.shields.io/pypi/pyversions/seismo-xl.svg?style=flat-square" alt="Python versions">
+  </a>
+  <a href="https://github.com/samarth-kashyap/seismo-xl/blob/main/LICENSE">
+    <img src="https://img.shields.io/pypi/l/seismo-xl.svg?style=flat-square" alt="License">
+  </a>
+  <a href="https://pypi.org/project/seismo-xl/">
+    <img src="https://img.shields.io/pypi/dm/seismo-xl.svg?style=flat-square" alt="PyPI downloads">
+  </a>
+</p>
+
 **Measure frequency shifts in solar-like oscillators using filtered cross-correlation.**
 
 This package implements the filtered cross-correlation method for computing variations in p-mode frequencies ($\delta\omega_\ell$) over time. It supports both Kepler and Virgo/SoHO data.
