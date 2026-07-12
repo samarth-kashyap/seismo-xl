@@ -7,7 +7,7 @@ name = "seismo-xl"
 version = "0.1.0"
 description = "Measure frequency shifts in solar-like oscillators using filtered cross-correlation"
 authors = [
-    {name = "Samarth Kashyap", email = "samarth.kashyap@physics.uu.se"},
+    {name = "Samarth Kashyap", email = "kashyap@mps.mpg.de"},
 ]
 license = "MIT"
 readme = "README.md"
