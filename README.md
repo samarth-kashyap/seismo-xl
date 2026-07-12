@@ -97,12 +97,13 @@ python create_spectra.py --source valeriy --channel blue --Ncarr 3
 ├── pyproject.toml          # Package metadata & dependencies
 ├── setup.py                # Legacy setup (editable install support)
 ├── src/
-│   ├── __init__.py
-│   ├── config.py           # YAML config loader with !include support
-│   ├── globalvars.py       # Global constants & helper classes
-│   ├── logger.py           # Logging utilities
-│   ├── stellarspec.py      # Stellar power spectrum construction
-│   └── utils.py            # Mode parameter readers & utilities
+│   └── seismo_xl/
+│       ├── __init__.py
+│       ├── config.py           # YAML config loader with !include support
+│       ├── globalvars.py       # Global constants & helper classes
+│       ├── logger.py           # Logging utilities
+│       ├── stellarspec.py      # Stellar power spectrum construction
+│       └── utils.py            # Mode parameter readers & utilities
 ├── peakbag_kepler.py       # Kepler peakbagging entry point
 ├── peakbag_virgo.py        # Virgo/SoHO peakbagging entry point
 ├── compute_delnu.py        # Frequency shift computation
@@ -126,7 +127,6 @@ python create_spectra.py --source valeriy --channel blue --Ncarr 3
 | `tqdm` | Progress bars |
 | `pyshtools` | Legendre polynomials |
 | `ritzLavelyPy` | Rotational splitting polynomials |
-| `sgkutils` | HDF5 read/write helpers |
 | `apollinaire` | Peakbagging (optional, needed for `--peakbag`) |
 
 ## Notes

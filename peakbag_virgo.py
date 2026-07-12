@@ -37,7 +37,7 @@ except:
 
 
 # Local imports
-from src.config import Config
+from seismo_xl.config import Config
 PARAMS = Config('./config_virgo.yml')
 
 # Argument parser can override configuration through command line

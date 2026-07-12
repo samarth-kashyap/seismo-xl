@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 *.egg-info/
+*.egg-info/*
 
 # Jupyter
 .ipynb_checkpoints/
@@ -41,6 +42,10 @@ temp_pysyd/
 # OS
 .DS_Store
 Thumbs.db
+
+# Build artifacts
+dist/
+build/
 
 # pi agent
 .pi/

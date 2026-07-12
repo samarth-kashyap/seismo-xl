@@ -6,8 +6,8 @@ import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
 
 # Local imports
-from src.globalvars import globalVars
-from src.stellarspec import stellarPS
+from seismo_xl.globalvars import globalVars
+from seismo_xl.stellarspec import stellarPS
 
 # Defining some global variables
 GVARS = globalVars()

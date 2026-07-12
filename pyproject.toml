@@ -39,9 +39,11 @@ all = [
 [project.urls]
 Repository = "https://github.com/samarth-kashyap/seismo-xl"
 Documentation = "https://github.com/samarth-kashyap/seismo-xl#readme"
+Issues = "https://github.com/samarth-kashyap/seismo-xl/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+include = ["seismo_xl", "seismo_xl.*"]
 
 [tool.setuptools.package-data]
 "*" = ["*.yml", "*.yaml"]

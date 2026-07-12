@@ -28,7 +28,7 @@ def saveh5(fname, dictionary):
                 raise TypeError(f"Unsupported type {type(val)} for key {key}")
     with h5py.File(fname, 'w') as f:
         _save(dictionary, f)
-from src.config import Config
+from seismo_xl.config import Config
 PARAMS = Config('./config.yml')
 
 parser = argparse.ArgumentParser()

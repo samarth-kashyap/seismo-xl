@@ -74,9 +74,9 @@ def saveh5(fname, dictionary):
                 raise TypeError(f"Unsupported type {type(val)} for key {key}")
     with h5py.File(fname, 'w') as f:
         _save(dictionary, f)
-from src.utils import read_a2z
-from src.stellarspec import stellarPS
-from src.config import Config
+from seismo_xl.utils import read_a2z
+from seismo_xl.stellarspec import stellarPS
+from seismo_xl.config import Config
 
 PARAMS = Config('./config.yml')
 
