@@ -176,7 +176,7 @@ Create `.config` with your own paths before using `globalvars.py` features.
 
 If you use this code in published research, please cite:
 
-> Kashyap, S., et al. (2025). *Frequency shifts in solar-like oscillators using filtered cross-correlation*. (In prep.)
+> Kashyap, S. G., et al. (2026). *Determining low-ℓ p-mode frequency shifts in Sun-like stars: Enhancing the cross-correlation technique with filters*.
 
 ## License
 
